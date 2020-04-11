@@ -282,7 +282,7 @@ def get_batches(item_code, warehouse, qty=1, throw=False, serial_no=None):
 			join `tabStock Ledger Entry` ignore index (item_code, warehouse)
 				on (`tabBatch`.batch_id = `tabStock Ledger Entry`.batch_no )
 		where `tabStock Ledger Entry`.item_code = %s and `tabStock Ledger Entry`.warehouse = %s
-			and (`tabBatch`.expiry_date >= CURDATE() or `tabBatch`.expiry_date IS NULL) {0}
+			{0}
 		group by batch_id
 		order by `tabBatch`.expiry_date ASC, `tabBatch`.creation ASC
 	""".format(cond), (item_code, warehouse), as_dict=True)
