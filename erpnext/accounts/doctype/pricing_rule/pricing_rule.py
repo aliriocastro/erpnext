@@ -128,7 +128,7 @@ class PricingRule(Document):
 def apply_pricing_rule(args, doc=None):
 	"""
 		args = {
-			"items": [{"doctype": "", "name": "", "item_code": "", "brand": "", "item_group": ""}, ...],
+			"items": [{"doctype": "", "name": "", "item_code": "", "brand": "", "item_group": "", "batch_no", ""}, ...],
 			"customer": "something",
 			"customer_group": "something",
 			"territory": "something",
@@ -205,6 +205,7 @@ def get_pricing_rule_for_item(args, price_list_rate=0, doc=None, for_validate=Fa
 		"name": args.name,
 		"parent": args.parent,
 		"parenttype": args.parenttype,
+		"batch_no": args.batch_no, # batch_no as an arg
 		"child_docname": args.get('child_docname'),
 		"discount_percentage_on_rate": [],
 		"discount_amount_on_rate": []

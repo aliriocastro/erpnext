@@ -1304,7 +1304,8 @@ erpnext.TransactionController = erpnext.taxes_and_totals.extend({
 					"warehouse": d.warehouse,
 					"serial_no": d.serial_no,
 					"price_list_rate": d.price_list_rate,
-					"conversion_factor": d.conversion_factor || 1.0
+					"conversion_factor": d.conversion_factor || 1.0,
+					"batch_no": d.batch_no // support batch_no as a price list rule arg
 				});
 
 				// if doctype is Quotation Item / Sales Order Iten then add Margin Type and rate in item_list

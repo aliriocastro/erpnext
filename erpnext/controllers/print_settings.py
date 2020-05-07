@@ -5,8 +5,8 @@ from __future__ import unicode_literals
 import frappe
 from frappe.utils import cint
 
-def print_settings_for_item_table(doc):
 
+def print_settings_for_item_table(doc):
 	doc.print_templates = {
 		"qty": "templates/print_formats/includes/item_table_qty.html"
 	}

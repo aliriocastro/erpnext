@@ -900,7 +900,7 @@ def apply_price_list(args, as_doc=False):
 		args = {
 			"doctype": "",
 			"name": "",
-			"items": [{"doctype": "", "name": "", "item_code": "", "brand": "", "item_group": ""}, ...],
+			"items": [{"doctype": "", "name": "", "item_code": "", "brand": "", "item_group": "", "batch_no", ""}, ...],
 			"conversion_rate": 1.0,
 			"selling_price_list": None,
 			"price_list_currency": None,
