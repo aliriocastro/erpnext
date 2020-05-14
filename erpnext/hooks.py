@@ -532,6 +532,6 @@ global_search_doctypes = {
 
 jenv = {
     "methods": [
-        "get_default_ifu_by_item:labotech.labotech.stock.item.get_default_ifu_by_item"
+        "get_default_ifu_by_item:labotech.stock.item.get_default_ifu_by_item"
     ]
 }
