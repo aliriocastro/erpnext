@@ -529,3 +529,9 @@ global_search_doctypes = {
 		{'doctype': 'Hotel Room Type', 'index': 4}
 	]
 }
+
+jenv = {
+    "methods": [
+        "get_default_ifu_by_item:labotech.api.stock.item.get_default_ifu_by_item"
+    ]
+}
