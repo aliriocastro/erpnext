@@ -135,16 +135,17 @@
    "label": "Hide Customer's Tax Id from Sales Transactions"
   },
   {
+   "default": "0",
    "description": "Forces using customer's default currency in sales transaction such as Quotation, Sales Order and Sales Invoice",
    "fieldname": "force_use_customers_currency_in_sales",
-   "fieldtype": "Data",
+   "fieldtype": "Check",
    "label": "Force to use Customer's Currency in Sales Transactions"
   }
  ],
  "icon": "fa fa-cog",
  "idx": 1,
  "issingle": 1,
- "modified": "2020-07-27 22:58:45.979393",
+ "modified": "2020-07-28 00:00:25.135991",
  "modified_by": "aliriocastro@labotechla.com",
  "module": "Selling",
  "name": "Selling Settings",
