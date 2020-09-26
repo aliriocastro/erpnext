@@ -328,7 +328,7 @@ def get_batch_no(doctype, txt, searchfield, start, page_len, filters):
 
 	if args.get('warehouse'):
 		batch_nos = frappe.db.sql("""select sle.batch_no, round(sum(sle.actual_qty),2), sle.stock_uom,
-				concat('MFG-',batch.manufacturing_date), concat('EXP-',batch.expiry_date)
+				concat('Fabricación ->',batch.manufacturing_date), concat('Expiración ->',batch.expiry_date)
 			from `tabStock Ledger Entry` sle
 				INNER JOIN `tabBatch` batch on sle.batch_no = batch.name
 			where
