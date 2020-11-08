@@ -255,11 +255,12 @@ def get_party_account_currency(party_type, party, company):
 
 def get_party_gle_currency(party_type, party, company):
 	def generator():
-		existing_gle_currency = frappe.db.sql("""select account_currency from `tabGL Entry`
+		existing_gle_currency = frappe.db.sql("""select distinct account_currency from `tabGL Entry`
 			where docstatus=1 and company=%(company)s and party_type=%(party_type)s and party=%(party)s
-			group by account_currency""", { "company": company, "party_type": party_type, "party": party }, as_list=True)
+			""", { "company": company, "party_type": party_type, "party": party }, as_list=True)
 			
-		if len(existing_gle_currency) > 1 and ["USD"] in existing_gle_currency: return "USD"
+		if len(existing_gle_currency) > 1 and party_type == "Customer" \
+      	and [frappe.get_cached_value("Customer", party, "default_currency")] in existing_gle_currency: return frappe.get_cached_value("Customer", party, "default_currency")
   
 		return existing_gle_currency[0][0] if existing_gle_currency else None
 
@@ -267,6 +268,10 @@ def get_party_gle_currency(party_type, party, company):
 		regenerate_if_none=True)
 
 def get_party_gle_account(party_type, party, company):
+    def get_customer_default_currency(party):
+        
+        
+    
 	def generator():
 		existing_gle_account = frappe.db.sql("""select account from `tabGL Entry`
 			where docstatus=1 and company=%(company)s and party_type=%(party_type)s and party=%(party)s
