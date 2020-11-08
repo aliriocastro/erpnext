@@ -268,14 +268,13 @@ def get_party_gle_currency(party_type, party, company):
 		regenerate_if_none=True)
 
 def get_party_gle_account(party_type, party, company):
-    def get_customer_default_currency(party):
-        
-        
-    
 	def generator():
-		existing_gle_account = frappe.db.sql("""select account from `tabGL Entry`
+		existing_gle_account = frappe.db.sql("""select distinct account from `tabGL Entry`
 			where docstatus=1 and company=%(company)s and party_type=%(party_type)s and party=%(party)s
-			limit 1""", { "company": company, "party_type": party_type, "party": party })
+			""", { "company": company, "party_type": party_type, "party": party })
+
+		if len(existing_gle_account) > 1:
+			frappe.throw("More than one account for {0}: {1} was found in General Ledger.").format(party_type, party)
 
 		return existing_gle_account[0][0] if existing_gle_account else None
 
