@@ -255,6 +255,9 @@ def get_party_account_currency(party_type, party, company):
 
 def get_party_gle_currency(party_type, party, company):
 	def generator():
+		if party_type == "Customer": #labotech
+			return frappe.get_cached_value("Customer", party, "default_currency") #labotech
+     
 		existing_gle_currency = frappe.db.sql("""select distinct account_currency from `tabGL Entry`
 			where docstatus=1 and company=%(company)s and party_type=%(party_type)s and party=%(party)s
 			""", { "company": company, "party_type": party_type, "party": party }, as_list=True)
