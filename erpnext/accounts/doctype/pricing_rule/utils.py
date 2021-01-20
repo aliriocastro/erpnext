@@ -93,27 +93,6 @@ def _get_pricing_rules(apply_on, args, values):
 
 	conditions += " and ifnull(`tabPricing Rule`.for_price_list, '') in (%(price_list)s, '')"
 	values["price_list"] = args.get("price_list")
- 
-	sql1 = """select `tabPricing Rule`.*,
-			{child_doc}.{apply_on_field}, {child_doc}.uom
-		from `tabPricing Rule`, {child_doc}
-		where ({item_conditions} or (`tabPricing Rule`.apply_rule_on_other is not null
-			and `tabPricing Rule`.{apply_on_other_field}=%({apply_on_field})s) {item_variant_condition})
-			and {child_doc}.parent = `tabPricing Rule`.name
-			and `tabPricing Rule`.disable = 0 and
-			`tabPricing Rule`.{transaction_type} = 1 {warehouse_cond} {conditions}
-		order by `tabPricing Rule`.priority desc,
-			`tabPricing Rule`.name desc""".format(
-			child_doc = child_doc,
-			apply_on_field = apply_on_field,
-			item_conditions = item_conditions,
-			item_variant_condition = item_variant_condition,
-			transaction_type = args.transaction_type,
-			warehouse_cond = warehouse_conditions,
-			apply_on_other_field = "other_{0}".format(apply_on_field),
-			conditions = conditions)
-   
-	frappe.log_error(sql1, "SQL _get_pricing_rules")
 
 	pricing_rules = frappe.db.sql("""select `tabPricing Rule`.*,
 			{child_doc}.{apply_on_field}, {child_doc}.uom
@@ -200,6 +179,10 @@ def filter_pricing_rules(args, pricing_rules, doc=None):
 		pricing_rules = [pricing_rules]
 
 	original_pricing_rule = copy.copy(pricing_rules)
+ 
+	if doc.get("coupon_code"):
+		coupon_pricing_rule = frappe.get_cached_value('Coupon Code', doc.get("coupon_code"), "pricing_rule")
+		pricing_rules = list(filter(lambda x: x.name == coupon_pricing_rule, pricing_rules))
 
 	# filter for qty
 	if pricing_rules:
