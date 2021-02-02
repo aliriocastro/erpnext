@@ -180,7 +180,7 @@ def filter_pricing_rules(args, pricing_rules, doc=None):
 
 	original_pricing_rule = copy.copy(pricing_rules)
  
-	if doc.get("coupon_code"):
+	if doc and doc.get("coupon_code"):
 		coupon_pricing_rule = frappe.get_cached_value('Coupon Code', doc.get("coupon_code"), "pricing_rule")
 		pricing_rules = list(filter(lambda x: x.name == coupon_pricing_rule, pricing_rules))
 
