@@ -157,7 +157,7 @@ class GLEntry(Document):
 				.format(self.voucher_type, self.voucher_no, self.account,
 				(account_currency or company_currency)), InvalidAccountCurrency)
 
-		if self.party_type and self.party:
+		if self.party_type and self.party and not frappe.db.get_single_value("Accounts Settings", "dont_validate_currency_journal_entries"):
 			validate_party_gle_currency(self.party_type, self.party, self.company, self.account_currency)
 
 
