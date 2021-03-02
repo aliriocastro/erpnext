@@ -20,7 +20,7 @@ class ItemPrice(Document):
 		self.update_price_list_details()
 		self.update_item_details()
 		#self.check_duplicates()
-  		self.check_duplicates_in_memory()
+		self.check_duplicates_in_memory()
 
 	def validate_item(self):
 		if not frappe.db.exists("Item", self.item_code):
@@ -80,7 +80,7 @@ class ItemPrice(Document):
   
 		if not data:
 			data = _item_prices_data_generator(self.price_list)
-      		frappe.cache().set_value(cache_key, data, expires_in_sec=15)
+			frappe.cache().set_value(cache_key, data, expires_in_sec=15)
         
 		data = filter(lambda x: x.get("item_code") == self.item_code and x.get("name") != self.name, data)
   
