@@ -19,8 +19,8 @@ class ItemPrice(Document):
 		self.validate_dates()
 		self.update_price_list_details()
 		self.update_item_details()
-		#self.check_duplicates()
-		self.check_duplicates_in_memory()
+		self.check_duplicates()
+		#self.check_duplicates_in_memory()
 
 	def validate_item(self):
 		if not frappe.db.exists("Item", self.item_code):
