@@ -79,9 +79,9 @@ class ItemPrice(Document):
 		data = frappe.cache().get_value(cache_key)
   
 		if data is None:
-			#frappe.log_error(f"NOT Found {cache_key} in cache.")
+			frappe.log_error(f"NOT Found {cache_key} in cache.")
 			data = _item_prices_data_generator(self.price_list)
-			frappe.cache().set_value(cache_key, data)
+			frappe.cache().set_value(cache_key, data, expires_in_sec=15)
         
 		data = list(filter(lambda x: x.get("item_code") == self.item_code and x.get("name") != self.name, data))
   
