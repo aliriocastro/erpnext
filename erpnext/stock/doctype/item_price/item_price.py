@@ -94,6 +94,8 @@ class ItemPrice(Document):
 			data = _item_prices_data_generator(self.price_list)
 			#frappe.cache().set_value(cache_key, data, expires_in_sec=15)
 			frappe.cache().set_value(cache_key, data)
+
+		time_cache_gen_data = timer()
         
 		data = list(filter(lambda x: x.get("item_code") == self.item_code and x.get("name") != self.name, data))
 
@@ -113,8 +115,9 @@ class ItemPrice(Document):
 
 		frappe.log_error(frappe.as_json({
 			"total": (timer() - start_time)*1000,
+			"gen_data": (time_cache_gen_data - time_cache_get_value)*1000,
 			"cache_get_value": (time_cache_get_value - start_time)*1000,
-			"first_filtration": (time_first_filtration - time_cache_get_value)*1000,
+			"first_filtration": (time_first_filtration - time_cache_gen_data)*1000,
 			"sec_filtration": (timer() - time_sec_filtration)*1000
 		}), "Item Price Profiling")
 		
