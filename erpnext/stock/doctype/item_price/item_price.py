@@ -4,7 +4,7 @@
 from __future__ import unicode_literals
 import frappe
 from frappe import _
-
+from timeit import default_timer as timer
 
 class ItemPriceDuplicateItem(frappe.ValidationError): pass
 
@@ -75,13 +75,19 @@ class ItemPrice(Document):
 
 			return item_prices
 
+		def log_execution_time(st, et):
+			frappe.log_error(f"Execution time: {((et-st)*1000)}ms ", "Item Price Execution Time")
+  
+		start_time = timer()
+
 		cache_key =  f"item_prices.{frappe.scrub(self.price_list)}"
 		data = frappe.cache().get_value(cache_key)
-  
-		#frappe.log_error(frappe.as_json(data), "Item Prices Cache Result")
+
+		if data is not None:
+			frappe.log_error(f"FOUND {cache_key} in cache.", "Item Price: FOUND")
   
 		if data is None:
-			#frappe.log_error(f"NOT Found {cache_key} in cache.")
+			frappe.log_error(f"NOT Found {cache_key} in cache.", "Item Price: NOT FOUND")
 			data = _item_prices_data_generator(self.price_list)
 			frappe.cache().set_value(cache_key, data, expires_in_sec=15)
         
@@ -93,8 +99,11 @@ class ItemPrice(Document):
 				data = list(filter(lambda x: x.get(field) == self.get(field), data))
 
 		if len(data) > 0:
+			log_execution_time(start_time, timer())
 			frappe.log_error(frappe.as_json(data), "Item Price appears multiple times")
 			frappe.throw(_("Item Price appears multiple times based on Price List, Supplier/Customer, Currency, Item, UOM, Qty and Dates."), ItemPriceDuplicateItem)
+   
+		log_execution_time(start_time, timer())
    
 	def before_save(self):
 		if self.selling:
