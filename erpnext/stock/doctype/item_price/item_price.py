@@ -19,7 +19,8 @@ class ItemPrice(Document):
 		self.validate_dates()
 		self.update_price_list_details()
 		self.update_item_details()
-		self.check_duplicates()
+		#self.check_duplicates()
+  		self.check_duplicates_in_memory()
 
 	def validate_item(self):
 		if not frappe.db.exists("Item", self.item_code):
@@ -65,7 +66,32 @@ class ItemPrice(Document):
 
 		if price_list_rate :
 			frappe.throw(_("Item Price appears multiple times based on Price List, Supplier/Customer, Currency, Item, UOM, Qty and Dates."), ItemPriceDuplicateItem)
+   
+	def check_duplicates_in_memory(self):
+		def _item_prices_data_generator(price_list):
+			item_prices = frappe.db.sql("""SELECT item_code, price_list, name, uom, valid_from, valid_upto, packing_unit, customer, supplier 
+						FROM `tabItem Price` 
+						WHERE %(price_list)s""", {"price_list": price_list})
 
+			return item_prices
+
+		cache_key =  f"item_prices.{frappe.scrub(self.name)}"
+		data = frappe.cache().get_value(cache_key)
+  
+		if not data:
+			data = _item_prices_data_generator(self.price_list)
+      		frappe.cache().set_value(cache_key, data, expires_in_sec=15)
+        
+		data = filter(lambda x: x.get("item_code") == self.item_code and x.get("name") != self.name, data)
+  
+		for field in ['uom', 'valid_from',
+					'valid_upto', 'packing_unit', 'customer', 'supplier']:
+			if self.get(field):
+				data = filter(lambda x: x.get(field) == self.get(field), data)
+
+		if data:
+			frappe.throw(_("Item Price appears multiple times based on Price List, Supplier/Customer, Currency, Item, UOM, Qty and Dates."), ItemPriceDuplicateItem)
+   
 	def before_save(self):
 		if self.selling:
 			self.reference = self.customer
