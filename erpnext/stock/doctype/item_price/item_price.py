@@ -92,7 +92,7 @@ class ItemPrice(Document):
 			if self.get(field):
 				data = filter(lambda x: x.get(field) == self.get(field), data)
 
-		if len(data) > 0:
+		if len(list(data)) > 0:
 			frappe.log_error(frappe.as_json(data), "Item Price appears multiple times")
 			frappe.throw(_("Item Price appears multiple times based on Price List, Supplier/Customer, Currency, Item, UOM, Qty and Dates."), ItemPriceDuplicateItem)
    
