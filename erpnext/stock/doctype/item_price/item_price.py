@@ -114,13 +114,13 @@ class ItemPrice(Document):
 			frappe.log_error(frappe.as_json(data), "Item Price appears multiple times")
 			frappe.throw(_("Item Price appears multiple times based on Price List, Supplier/Customer, Currency, Item, UOM, Qty and Dates."), ItemPriceDuplicateItem)
 
-		frappe.log_error(frappe.as_json({
-			"total": (timer() - start_time)*1000,
-			"gen_data": (time_cache_gen_data - time_cache_get_value)*1000,
-			"cache_get_value": (time_cache_get_value - start_time)*1000,
-			"first_filtration": (time_first_filtration - time_cache_gen_data)*1000,
-			"sec_filtration": (timer() - time_sec_filtration)*1000
-		}), "Item Price Profiling")
+		# frappe.log_error(frappe.as_json({
+		# 	"total": (timer() - start_time)*1000,
+		# 	"gen_data": (time_cache_gen_data - time_cache_get_value)*1000,
+		# 	"cache_get_value": (time_cache_get_value - start_time)*1000,
+		# 	"first_filtration": (time_first_filtration - time_cache_gen_data)*1000,
+		# 	"sec_filtration": (timer() - time_sec_filtration)*1000
+		# }), "Item Price Profiling")
 		
    
 	def before_save(self):
