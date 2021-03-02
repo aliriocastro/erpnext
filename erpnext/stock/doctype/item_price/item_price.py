@@ -85,15 +85,15 @@ class ItemPrice(Document):
 			data = _item_prices_data_generator(self.price_list)
 			frappe.cache().set_value(cache_key, data, expires_in_sec=15)
         
-		data = filter(lambda x: x.get("item_code") == self.item_code and x.get("name") != self.name, data)
+		data = list(filter(lambda x: x.get("item_code") == self.item_code and x.get("name") != self.name, data))
   
 		for field in ['uom', 'valid_from',
 					'valid_upto', 'packing_unit', 'customer', 'supplier']:
 			if self.get(field):
-				data = filter(lambda x: x.get(field) == self.get(field), data)
+				data = list(filter(lambda x: x.get(field) == self.get(field), data))
 
-		if len(list(data)) > 0:
-			frappe.log_error(frappe.as_json(list(data)), "Item Price appears multiple times")
+		if len(data) > 0:
+			frappe.log_error(frappe.as_json(data), "Item Price appears multiple times")
 			frappe.throw(_("Item Price appears multiple times based on Price List, Supplier/Customer, Currency, Item, UOM, Qty and Dates."), ItemPriceDuplicateItem)
    
 	def before_save(self):
