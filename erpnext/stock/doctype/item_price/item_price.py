@@ -80,7 +80,8 @@ class ItemPrice(Document):
   
 		start_time = timer()
 
-		cache_key =  f"item_prices.{frappe.scrub(self.price_list)}"
+		#cache_key =  f"item_prices.{frappe.scrub(self.price_list)}"
+  		cache_key =  f"item_prices"
 		data = frappe.cache().get_value(cache_key)
 
 		if data is not None:
