@@ -80,9 +80,11 @@ class ItemPrice(Document):
   
 		start_time = timer()
 
-		#cache_key =  f"item_prices.{frappe.scrub(self.price_list)}"
-		cache_key =  f"item_prices"
+		cache_key =  f"item_prices.{frappe.scrub(self.price_list)}"
+		#cache_key =  f"item_prices"
 		data = frappe.cache().get_value(cache_key)
+  
+		time_cache_get_value = timer()
 
 		if data is not None:
 			frappe.log_error(f"FOUND {cache_key} in cache.", "Item Price: FOUND")
@@ -94,18 +96,28 @@ class ItemPrice(Document):
 			frappe.cache().set_value(cache_key, data)
         
 		data = list(filter(lambda x: x.get("item_code") == self.item_code and x.get("name") != self.name, data))
+
+		time_first_filtration = timer()
   
 		for field in ['uom', 'valid_from',
 					'valid_upto', 'packing_unit', 'customer', 'supplier']:
 			if self.get(field):
 				data = list(filter(lambda x: x.get(field) == self.get(field), data))
+    
+		time_sec_filtration = timer()	
 
 		if len(data) > 0:
 			log_execution_time(start_time, timer())
 			frappe.log_error(frappe.as_json(data), "Item Price appears multiple times")
 			frappe.throw(_("Item Price appears multiple times based on Price List, Supplier/Customer, Currency, Item, UOM, Qty and Dates."), ItemPriceDuplicateItem)
-   
-		log_execution_time(start_time, timer())
+
+		frappe.log_error(frappe.as_json({
+			"total": timer() - start_time,
+			"cache_get_value": time_cache_get_value - start_time,
+			"first_filtration": time_first_filtration - time_cache_get_value,
+			"sec_filtration": timer() - time_sec_filtration
+		}, "Item Price Profiling"))
+		
    
 	def before_save(self):
 		if self.selling:
