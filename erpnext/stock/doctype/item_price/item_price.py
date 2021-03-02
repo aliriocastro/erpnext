@@ -71,7 +71,7 @@ class ItemPrice(Document):
 		def _item_prices_data_generator(price_list):
 			item_prices = frappe.db.sql("""SELECT item_code, price_list, name, uom, valid_from, valid_upto, packing_unit, customer, supplier 
 						FROM `tabItem Price` 
-						WHERE %(price_list)s""", {"price_list": price_list})
+						WHERE price_list=%(price_list)s""", {"price_list": price_list})
 
 			return item_prices
 
@@ -79,9 +79,6 @@ class ItemPrice(Document):
 		data = frappe.cache().get_value(cache_key)
   
 		frappe.log_error(frappe.as_json(data), "Item Prices Cache Result")
-  
-		if data is not None:
-			frappe.log_error(f"Found {cache_key} in cache.")
   
 		if data is None:
 			frappe.log_error(f"NOT Found {cache_key} in cache.")
