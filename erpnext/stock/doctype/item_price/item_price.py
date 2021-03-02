@@ -87,7 +87,8 @@ class ItemPrice(Document):
 		time_cache_get_value = timer()
 
 		if data is not None:
-			frappe.log_error(f"FOUND {cache_key} in cache.", "Item Price: FOUND")
+			#frappe.log_error(f"FOUND {cache_key} in cache.", "Item Price: FOUND")
+			pass
   
 		if data is None:
 			frappe.log_error(f"NOT Found {cache_key} in cache.", "Item Price: NOT FOUND")
