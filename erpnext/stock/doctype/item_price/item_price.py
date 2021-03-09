@@ -19,8 +19,8 @@ class ItemPrice(Document):
 		self.validate_dates()
 		self.update_price_list_details()
 		self.update_item_details()
-		#self.check_duplicates()
-		self.check_duplicates_in_memory()
+		self.check_duplicates()
+		#self.check_duplicates_in_memory()
 
 	def validate_item(self):
 		if not frappe.db.exists("Item", self.item_code):
@@ -85,10 +85,6 @@ class ItemPrice(Document):
 		data = frappe.cache().get_value(cache_key)
   
 		time_cache_get_value = timer()
-
-		if data is not None:
-			#frappe.log_error(f"FOUND {cache_key} in cache.", "Item Price: FOUND")
-			pass
   
 		if data is None:
 			frappe.log_error(f"NOT Found {cache_key} in cache.", "Item Price: NOT FOUND")

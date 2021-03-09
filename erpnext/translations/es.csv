@@ -6051,7 +6051,7 @@ DocType: Healthcare Service Unit,Vacant,Vacante
 DocType: Patient,Alcohol Past Use,Uso Pasado de Alcohol
 DocType: Fertilizer Content,Fertilizer Content,Contenido de Fertilizante
 apps/erpnext/erpnext/public/js/hub/pages/Seller.vue,No description,Sin descripción
-apps/erpnext/erpnext/accounts/doctype/journal_entry/journal_entry.js,Cr,Cred
+apps/erpnext/erpnext/accounts/doctype/journal_entry/journal_entry.js,Cr,Cr
 DocType: Tax Rule,Billing State,Región de facturación
 DocType: Quality Goal,Monitoring Frequency,Frecuencia de monitoreo
 DocType: Share Transfer,Transfer,Transferencia
