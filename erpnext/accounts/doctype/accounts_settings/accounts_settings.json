@@ -20,6 +20,7 @@
   "book_asset_depreciation_entry_automatically",
   "add_taxes_from_item_tax_template",
   "automatically_fetch_payment_terms",
+  "dont_validate_currency_journal_entries",
   "print_settings",
   "show_inclusive_tax_in_print",
   "column_break_12",
@@ -174,13 +175,19 @@
    "fieldname": "over_billing_allowance",
    "fieldtype": "Currency",
    "label": "Over Billing Allowance (%)"
+  },
+  {
+   "default": "0",
+   "fieldname": "dont_validate_currency_journal_entries",
+   "fieldtype": "Check",
+   "label": "Don't Validate Currency when Posting Journal Entries"
   }
  ],
  "icon": "icon-cog",
  "idx": 1,
  "issingle": 1,
- "modified": "2020-10-08 09:40:12.121145",
- "modified_by": "Administrator",
+ "modified": "2021-02-10 10:57:02.671863",
+ "modified_by": "aliriocastro@labotechla.com",
  "module": "Accounts",
  "name": "Accounts Settings",
  "owner": "Administrator",

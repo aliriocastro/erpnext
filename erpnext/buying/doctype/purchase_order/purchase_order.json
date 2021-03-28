@@ -753,7 +753,7 @@
   {
    "description": "In Words will be visible once you save the Purchase Order.",
    "fieldname": "base_in_words",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "In Words (Company Currency)",
    "oldfieldname": "in_words",
    "oldfieldtype": "Data",
@@ -809,7 +809,7 @@
   },
   {
    "fieldname": "in_words",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "In Words",
    "oldfieldname": "in_words_import",
    "oldfieldtype": "Data",
