@@ -238,14 +238,9 @@
  "idx": 1,
  "index_web_pages_for_search": 1,
  "issingle": 1,
-<<<<<<< HEAD
  "links": [],
  "modified": "2021-01-05 13:04:00.118892",
  "modified_by": "Administrator",
-=======
- "modified": "2021-02-10 10:57:02.671863",
- "modified_by": "aliriocastro@labotechla.com",
->>>>>>> e25c0963ac (erpnext v12 changes)
  "module": "Accounts",
  "name": "Accounts Settings",
  "owner": "Administrator",
