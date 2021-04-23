@@ -37,7 +37,8 @@
   "stock_auth_role",
   "batch_id_sb",
   "use_naming_series",
-  "naming_series_prefix"
+  "naming_series_prefix",
+  "allow_expired_batches"
  ],
  "fields": [
   {
@@ -234,6 +235,13 @@
    "fieldname": "disable_serial_no_and_batch_selector",
    "fieldtype": "Check",
    "label": "Disable Serial No And Batch Selector"
+  },
+  {
+   "default": "0",
+   "description": "Allows to fetch expired batches on transactions",
+   "fieldname": "allow_expired_batches",
+   "fieldtype": "Check",
+   "label": "Allow Transactions with Expired Batches"
   }
  ],
  "icon": "icon-cog",

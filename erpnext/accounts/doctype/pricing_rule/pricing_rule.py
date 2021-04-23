@@ -161,7 +161,7 @@ class PricingRule(Document):
 def apply_pricing_rule(args, doc=None):
 	"""
 		args = {
-			"items": [{"doctype": "", "name": "", "item_code": "", "brand": "", "item_group": ""}, ...],
+			"items": [{"doctype": "", "name": "", "item_code": "", "brand": "", "item_group": "", "batch_no", ""}, ...],
 			"customer": "something",
 			"customer_group": "something",
 			"territory": "something",

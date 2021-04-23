@@ -147,7 +147,7 @@ class DeliveryNote(SellingController):
 			},
 			"Sales Order Item": {
 				"ref_dn_field": "so_detail",
-				"compare_fields": [["item_code", "="], ["uom", "="], ["conversion_factor", "="]],
+				"compare_fields": [["item_code", "="]],
 				"is_child_table": True,
 				"allow_duplicate_prev_row_id": True
 			},
@@ -157,7 +157,7 @@ class DeliveryNote(SellingController):
 			},
 			"Sales Invoice Item": {
 				"ref_dn_field": "si_detail",
-				"compare_fields": [["item_code", "="], ["uom", "="], ["conversion_factor", "="]],
+				"compare_fields": [["item_code", "="]],
 				"is_child_table": True,
 				"allow_duplicate_prev_row_id": True
 			},

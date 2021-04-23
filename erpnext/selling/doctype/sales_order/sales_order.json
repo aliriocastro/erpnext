@@ -927,7 +927,7 @@
   {
    "description": "In Words will be visible once you save the Sales Order.",
    "fieldname": "base_in_words",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "hide_days": 1,
    "hide_seconds": 1,
    "label": "In Words (Company Currency)",
@@ -986,7 +986,7 @@
   },
   {
    "fieldname": "in_words",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "hide_days": 1,
    "hide_seconds": 1,
    "label": "In Words",
@@ -1480,8 +1480,8 @@
  "idx": 105,
  "is_submittable": 1,
  "links": [],
- "modified": "2021-01-20 23:40:39.929296",
- "modified_by": "Administrator",
+ "modified": "2021-01-28 09:10:40.584005",
+ "modified_by": "aliriocastro@labotechla.com",
  "module": "Selling",
  "name": "Sales Order",
  "owner": "Administrator",

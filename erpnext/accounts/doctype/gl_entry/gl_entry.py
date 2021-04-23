@@ -163,12 +163,12 @@ class GLEntry(Document):
 		if not self.account_currency:
 			self.account_currency = account_currency or company_currency
 
-		if account_currency != self.account_currency:
+		if account_currency != self.account_currency and not frappe.db.get_single_value("Accounts Settings", "dont_validate_currency_journal_entries"):
 			frappe.throw(_("{0} {1}: Accounting Entry for {2} can only be made in currency: {3}")
 				.format(self.voucher_type, self.voucher_no, self.account,
 				(account_currency or company_currency)), InvalidAccountCurrency)
 
-		if self.party_type and self.party:
+		if self.party_type and self.party and not frappe.db.get_single_value("Accounts Settings", "dont_validate_currency_journal_entries"):
 			validate_party_gle_currency(self.party_type, self.party, self.company, self.account_currency)
 
 	def validate_and_set_fiscal_year(self):
