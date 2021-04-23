@@ -859,7 +859,7 @@
   },
   {
    "fieldname": "base_in_words",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "In Words (Company Currency)",
    "oldfieldname": "in_words",
    "oldfieldtype": "Data",
@@ -904,7 +904,7 @@
   },
   {
    "fieldname": "in_words",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "In Words",
    "oldfieldname": "in_words_import",
    "oldfieldtype": "Data",
@@ -1291,10 +1291,10 @@
    "fieldtype": "Column Break"
   },
   {
-    "fieldname": "project",
-    "fieldtype": "Link",
-    "label": "Project",
-    "options": "Project"
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "label": "Project",
+   "options": "Project"
   },
   {
    "fieldname": "tax_withholding_category",
@@ -1308,8 +1308,8 @@
  "icon": "fa fa-file-text",
  "idx": 204,
  "is_submittable": 1,
- "modified": "2020-09-21 12:22:09.164068",
- "modified_by": "Administrator",
+ "modified": "2021-03-30 18:01:26.213672",
+ "modified_by": "aliriocastro@labotechla.com",
  "module": "Accounts",
  "name": "Purchase Invoice",
  "name_case": "Title Case",
