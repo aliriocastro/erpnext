@@ -15,7 +15,8 @@
     "snyk": "^1.518.0"
   },
   "dependencies": {
-    "onscan.js": "^1.5.2"
+    "onscan.js": "^1.5.2",
+    "vue": "^2.6.12"
   },
   "scripts": {
     "snyk-protect": "snyk protect",
