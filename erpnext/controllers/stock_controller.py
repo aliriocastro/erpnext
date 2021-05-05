@@ -59,7 +59,9 @@ class StockController(AccountsController):
 			if flt(d.qty) > 0.0 and d.get("batch_no") and self.get("posting_date") and self.docstatus < 2:
 				expiry_date = frappe.get_cached_value("Batch", d.get("batch_no"), "expiry_date")
 
-				if expiry_date and getdate(expiry_date) < getdate(self.posting_date):
+				allow_expired_batches = frappe.db.get_value('Stock Settings', None, 'allow_expired_batches')
+
+				if not allow_expired_batches and expiry_date and getdate(expiry_date) < getdate(self.posting_date):
 					frappe.throw(_("Row #{0}: The batch {1} has already expired.")
 						.format(d.idx, get_link_to_form("Batch", d.get("batch_no"))))
 
@@ -260,7 +262,7 @@ class StockController(AccountsController):
 
 	def delete_auto_created_batches(self):
 		from erpnext.stock.doctype.serial_no.serial_no import get_serial_nos
-  
+
 		def set_auto_created_batch_to_none(batch_no):
 			for item in filter(lambda x: x.batch_no == batch_no, self.items):
 				item.batch_no = None
@@ -278,7 +280,7 @@ class StockController(AccountsController):
 		for data in frappe.get_all("Batch",
 			{'reference_name': self.name, 'reference_doctype': self.doctype}):
 			frappe.delete_doc("Batch", data.name)
-   
+
 			set_auto_created_batch_to_none(data.name)
 
 	def get_sl_entries(self, d, args):
