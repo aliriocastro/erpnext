@@ -439,32 +439,32 @@ def get_columns(filters):
 			"label": _("Posting Date"),
 			"fieldname": "posting_date",
 			"fieldtype": "Date",
-			"width": 90
+			"width": 130
 		},
 		{
 			"label": _("Account"),
 			"fieldname": "account",
 			"fieldtype": "Link",
 			"options": "Account",
-			"width": 180
+			"width": 250
 		},
 		{
 			"label": _("Debit ({0})").format(currency),
 			"fieldname": "debit",
 			"fieldtype": "Float",
-			"width": 100
+			"width": 150
 		},
 		{
 			"label": _("Credit ({0})").format(currency),
 			"fieldname": "credit",
 			"fieldtype": "Float",
-			"width": 100
+			"width": 150
 		},
 		{
 			"label": _("Balance ({0})").format(currency),
 			"fieldname": "balance",
 			"fieldtype": "Float",
-			"width": 130
+			"width": 150
 		}
 	]
 
@@ -484,7 +484,7 @@ def get_columns(filters):
 		{
 			"label": _("Against Account"),
 			"fieldname": "against",
-			"width": 120
+			"width": 250
 		},
 		{
 			"label": _("Party Type"),
@@ -494,7 +494,7 @@ def get_columns(filters):
 		{
 			"label": _("Party"),
 			"fieldname": "party",
-			"width": 100
+			"width": 150
 		},
 		{
 			"label": _("Project"),
