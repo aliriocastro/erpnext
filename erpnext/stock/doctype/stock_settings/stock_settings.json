@@ -43,7 +43,8 @@
   "column_break_26",
   "role_allowed_to_create_edit_back_dated_transactions",
   "stock_auth_role",
-  "allow_expired_batches"
+  "allow_expired_batches",
+  "disable_item_price_duplicates_validation"
  ],
  "fields": [
   {
@@ -238,11 +239,11 @@
    "label": "Disable Serial No And Batch Selector"
   },
   {
-    "default": "0",
-    "description": "Allows to fetch expired batches on transactions",
-    "fieldname": "allow_expired_batches",
-    "fieldtype": "Check",
-    "label": "Allow Transactions with Expired Batches"
+   "default": "0",
+   "description": "Allows to fetch expired batches on transactions",
+   "fieldname": "allow_expired_batches",
+   "fieldtype": "Check",
+   "label": "Allow Transactions with Expired Batches"
   },
   {
    "description": "Users with this role are allowed to over deliver/receive against orders above the allowance percentage",
@@ -272,6 +273,12 @@
   {
    "fieldname": "column_break_31",
    "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "disable_item_price_duplicates_validation",
+   "fieldtype": "Check",
+   "label": "Disable Item Price Duplicates Vaidation"
   }
  ],
  "icon": "icon-cog",
@@ -279,7 +286,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2021-05-18 17:27:42.709231",
+ "modified": "2021-07-04 23:41:36.939031",
  "modified_by": "Administrator",
  "module": "Stock",
  "name": "Stock Settings",
