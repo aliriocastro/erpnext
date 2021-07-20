@@ -19,7 +19,12 @@ class ItemPrice(Document):
 		self.validate_dates()
 		self.update_price_list_details()
 		self.update_item_details()
-		self.check_duplicates()
+
+
+		disable_duplicates_validation = frappe.db.get_single_value("Stock Settings", "disable_item_price_duplicates_validation")
+		if not disable_duplicates_validation:
+			self.check_duplicates()
+
 		#self.check_duplicates_in_memory()
 
 	def validate_item(self):
