@@ -256,14 +256,14 @@ def get_party_gle_currency(party_type, party, company):
 	def generator():
 		if party_type == "Customer": #labotech
 			return frappe.get_cached_value("Customer", party, "default_currency") #labotech
-     
+
 		existing_gle_currency = frappe.db.sql("""select distinct account_currency from `tabGL Entry`
 			where docstatus=1 and company=%(company)s and party_type=%(party_type)s and party=%(party)s
 			""", { "company": company, "party_type": party_type, "party": party }, as_list=True)
-			
+
 		if len(existing_gle_currency) > 1 and party_type == "Customer" \
       	and [frappe.get_cached_value("Customer", party, "default_currency")] in existing_gle_currency: return frappe.get_cached_value("Customer", party, "default_currency")
-  
+
 		return existing_gle_currency[0][0] if existing_gle_currency else None
 
 	return frappe.local_cache("party_gle_currency", (party_type, party, company), generator,
@@ -275,8 +275,8 @@ def get_party_gle_account(party_type, party, company):
 			where docstatus=1 and company=%(company)s and party_type=%(party_type)s and party=%(party)s
 			""", { "company": company, "party_type": party_type, "party": party })
 
-		if len(existing_gle_account) > 1:
-			frappe.throw("More than one account for {0}: {1} was found in General Ledger.").format(party_type, party)
+		# if len(existing_gle_account) > 1
+		# 	frappe.throw("More than one account for {0}: {1} was found in General Ledger.").format(party_type, party)
 
 		return existing_gle_account[0][0] if existing_gle_account else None
 
