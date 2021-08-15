@@ -17,7 +17,7 @@ from frappe.model.mapper import get_mapped_doc
 from frappe.utils.user import get_users_with_role
 
 #labotech
-from labotech.labotech.api.client import build_customer_combined_item_prices, clear_customer_combined_item_prices
+import labotech.labotech.api.client as labotech
 
 class Customer(TransactionBase):
 	def get_feed(self):
@@ -138,9 +138,9 @@ class Customer(TransactionBase):
 		self.update_customer_groups()
 
 		if self.pricing_lists:
-			build_customer_combined_item_prices(self.name)
+			labotech.build_customer_combined_item_prices(self.name)
 		else:
-			clear_customer_combined_item_prices(self.name)
+			labotech.clear_customer_combined_item_prices(self.name)
 
 	def update_customer_groups(self):
 		ignore_doctypes = ["Lead", "Opportunity", "POS Profile", "Tax Rule", "Pricing Rule"]
