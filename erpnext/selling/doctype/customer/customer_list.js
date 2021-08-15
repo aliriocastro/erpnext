@@ -2,7 +2,7 @@ frappe.listview_settings['Customer'] = {
 	add_fields: ["customer_name", "territory", "customer_group", "customer_type", "image"],
 
 	onload(listview) {
-		listview.page.add_button("sample",
+		listview.page.add_button("Reconstruir Lista de Precios",
 			async () => {
 
 				async function execute_build_all_customers_combined_item_prices() {
