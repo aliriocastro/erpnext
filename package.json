@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "onscan.js": "^1.5.2",
-    "vue": "^2.6.12"
+    "html2canvas": "^1.1.4"
   },
   "scripts": {
     "snyk-protect": "snyk protect",
