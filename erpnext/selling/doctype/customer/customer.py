@@ -143,10 +143,11 @@ class Customer(TransactionBase):
 
 		self.update_customer_groups()
 
-		if not self.disabled and self.pricing_lists:
-			labotech.build_customer_combined_item_prices(self.name)
-		elif not self.disabled:
-			labotech.clear_customer_combined_item_prices(self.name)
+		if not self.flags.is_new_doc:
+			if not self.disabled and self.pricing_lists:
+				labotech.build_customer_combined_item_prices(self.name)
+			elif not self.disabled:
+				labotech.clear_customer_combined_item_prices(self.name)
 
 	def update_customer_groups(self):
 		ignore_doctypes = ["Lead", "Opportunity", "POS Profile", "Tax Rule", "Pricing Rule"]
