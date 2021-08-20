@@ -69,6 +69,7 @@ class Customer(TransactionBase):
 		self.check_customer_group_change()
 		self.validate_default_bank_account()
 		self.validate_internal_customer()
+        self.validate_combined_price_list()
 
 		# set loyalty program tier
 		if frappe.db.exists('Customer', self.name):
@@ -304,6 +305,14 @@ class Customer(TransactionBase):
 							doc.name, args.get("customer_email_" + str(i)))
 				except frappe.NameError:
 					pass
+
+	def validate_combined_price_list(self):
+		if not self.price_list:
+			return
+
+		price_list = frappe.get_doc("Price List", self.price_list)
+		if not price_list.customer == self.name:
+			frappe.throw("La Lista de Precios indicada debe estar asignada al cliente. Asegúrese que diga la palabra (Combinada)")
 
 def create_contact(contact, party_type, party, email):
 	"""Create contact based on given contact name"""
