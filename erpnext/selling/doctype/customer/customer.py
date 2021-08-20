@@ -307,11 +307,11 @@ class Customer(TransactionBase):
 					pass
 
 	def validate_combined_price_list(self):
-		if not self.price_list:
+		if not self.default_price_list:
 			return
 
-		price_list = frappe.get_doc("Price List", self.price_list)
-		if not price_list.customer == self.name:
+		default_price_list = frappe.get_doc("Price List", self.pricdefault_price_liste_list)
+		if not default_price_list.customer == self.name:
 			frappe.throw("La Lista de Precios indicada debe estar asignada al cliente. Asegúrese que diga la palabra (Combinada)")
 
 def create_contact(contact, party_type, party, email):
