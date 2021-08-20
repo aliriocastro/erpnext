@@ -139,7 +139,7 @@ class Customer(TransactionBase):
 
 		if not self.disabled and self.pricing_lists:
 			labotech.build_customer_combined_item_prices(self.name)
-		else:
+		elif not self.disabled:
 			labotech.clear_customer_combined_item_prices(self.name)
 
 	def update_customer_groups(self):
