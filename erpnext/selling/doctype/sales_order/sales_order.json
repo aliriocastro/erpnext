@@ -134,6 +134,7 @@
   "sales_team_section_break",
   "sales_partner",
   "column_break7",
+  "amount_eligible_for_commission",
   "commission_rate",
   "total_commission",
   "section_break1",
@@ -1480,6 +1481,7 @@
    "fetch_from": "customer.represents_company",
    "fieldname": "represents_company",
    "fieldtype": "Link",
+   "ignore_user_permissions": 1,
    "label": "Represents Company",
    "options": "Company",
    "read_only": 1
@@ -1506,16 +1508,23 @@
    "fieldtype": "Small Text",
    "label": "Dispatch Address",
    "read_only": 1
+  },
+  {
+   "fieldname": "amount_eligible_for_commission",
+   "fieldtype": "Currency",
+   "label": "Amount Eligible for Commission",
+   "read_only": 1
   }
  ],
  "icon": "fa fa-file-text",
  "idx": 105,
  "is_submittable": 1,
  "links": [],
- "modified": "2021-09-01 15:12:24.115483",
+ "modified": "2021-10-05 12:16:40.775704",
  "modified_by": "Administrator",
  "module": "Selling",
  "name": "Sales Order",
+ "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {

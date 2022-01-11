@@ -1,7 +1,6 @@
 # Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and Contributors
 # License: GNU General Public License v3. See license.txt
 
-from __future__ import unicode_literals
 
 import frappe
 from frappe import _
@@ -139,6 +138,7 @@ class DeliveryNote(SellingController):
 		self.update_current_stock()
 
 		if not self.installation_status: self.installation_status = 'Not Installed'
+		self.reset_default_field_value("set_warehouse", "items", "warehouse")
 
 	def validate_with_previous_doc(self):
 		super(DeliveryNote, self).validate_with_previous_doc({
@@ -184,7 +184,6 @@ class DeliveryNote(SellingController):
 		for d in self.get_item_list():
 			if not d['warehouse'] and frappe.db.get_value("Item", d['item_code'], "is_stock_item") == 1:
 				frappe.throw(_("Warehouse required for stock Item {0}").format(d["item_code"]))
-
 
 	def update_current_stock(self):
 		if self.get("_action") and self._action != "update_after_submit":

@@ -1,15 +1,13 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) 2019, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-from __future__ import unicode_literals
 
 import json
 import math
 
 import frappe
 from frappe import _
-from frappe.utils import add_months, flt, getdate, now_datetime, nowdate
+from frappe.utils import add_months, flt, get_last_day, getdate, now_datetime, nowdate
 from six import string_types
 
 import erpnext
@@ -65,7 +63,7 @@ class Loan(AccountsController):
 			self.rate_of_interest = frappe.db.get_value("Loan Type", self.loan_type, "rate_of_interest")
 
 		if self.repayment_method == "Repay Over Number of Periods":
-			self.monthly_repayment_amount = get_monthly_repayment_amount(self.repayment_method, self.loan_amount, self.rate_of_interest, self.repayment_periods)
+			self.monthly_repayment_amount = get_monthly_repayment_amount(self.loan_amount, self.rate_of_interest, self.repayment_periods)
 
 	def check_sanctioned_amount_limit(self):
 		sanctioned_amount_limit = get_sanctioned_amount_limit(self.applicant_type, self.applicant, self.company)
@@ -102,7 +100,7 @@ class Loan(AccountsController):
 				"total_payment": total_payment,
 				"balance_loan_amount": balance_amount
 			})
-			next_payment_date = add_months(payment_date, 1)
+			next_payment_date = add_single_month(payment_date)
 			payment_date = next_payment_date
 
 	def set_repayment_period(self):
@@ -137,16 +135,23 @@ class Loan(AccountsController):
 			frappe.throw(_("Loan amount is mandatory"))
 
 	def link_loan_security_pledge(self):
-		if self.is_secured_loan:
-			loan_security_pledge = frappe.db.get_value('Loan Security Pledge', {'loan_application': self.loan_application},
-				'name')
+		if self.is_secured_loan and self.loan_application:
+			maximum_loan_value = frappe.db.get_value('Loan Security Pledge',
+				{
+					'loan_application': self.loan_application,
+					'status': 'Requested'
+				},
+				'sum(maximum_loan_value)'
+			)
 
-			if loan_security_pledge:
-				frappe.db.set_value('Loan Security Pledge', loan_security_pledge, {
-					'loan': self.name,
-					'status': 'Pledged',
-					'pledge_time': now_datetime()
-				})
+			if maximum_loan_value:
+				frappe.db.sql("""
+					UPDATE `tabLoan Security Pledge`
+					SET loan = %s, pledge_time = %s, status = 'Pledged'
+					WHERE status = 'Requested' and loan_application = %s
+				""", (self.name, now_datetime(), self.loan_application))
+
+				self.db_set('maximum_loan_amount', maximum_loan_value)
 
 	def unlink_loan_security_pledge(self):
 		pledges = frappe.get_all('Loan Security Pledge', fields=['name'], filters={'loan': self.name})
@@ -207,7 +212,7 @@ def validate_repayment_method(repayment_method, loan_amount, monthly_repayment_a
 		if monthly_repayment_amount > loan_amount:
 			frappe.throw(_("Monthly Repayment Amount cannot be greater than Loan Amount"))
 
-def get_monthly_repayment_amount(repayment_method, loan_amount, rate_of_interest, repayment_periods):
+def get_monthly_repayment_amount(loan_amount, rate_of_interest, repayment_periods):
 	if rate_of_interest:
 		monthly_interest_rate = flt(rate_of_interest) / (12 *100)
 		monthly_repayment_amount = math.ceil((loan_amount * monthly_interest_rate *
@@ -391,3 +396,9 @@ def get_shortfall_applicants():
 		"value": len(applicants),
 		"fieldtype": "Int"
 	}
+
+def add_single_month(date):
+	if getdate(date) == get_last_day(date):
+		return get_last_day(add_months(date, 1))
+	else:
+		return add_months(date, 1)

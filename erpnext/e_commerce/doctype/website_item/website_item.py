@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) 2021, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
@@ -12,7 +11,7 @@ from frappe.website.doctype.website_slideshow.website_slideshow import get_slide
 from frappe.website.website_generator import WebsiteGenerator
 
 from erpnext.e_commerce.doctype.item_review.item_review import get_item_reviews
-from erpnext.e_commerce.redisearch import (
+from erpnext.e_commerce.redisearch_utils import (
 	delete_item_from_index,
 	insert_item_to_index,
 	update_index_for_item,
@@ -32,6 +31,16 @@ class WebsiteItem(WebsiteGenerator):
 		template="templates/generators/item/item.html",
 		no_cache=1
 	)
+
+	def autoname(self):
+		# use naming series to accomodate items with same name (different item code)
+		from frappe.model.naming import make_autoname
+
+		from erpnext.setup.doctype.naming_series.naming_series import get_default_naming_series
+
+		naming_series = get_default_naming_series("Website Item")
+		if not self.name and naming_series:
+			self.name = make_autoname(naming_series, doc=self)
 
 	def onload(self):
 		super(WebsiteItem, self).onload()
@@ -97,10 +106,11 @@ class WebsiteItem(WebsiteGenerator):
 					make_website_item(template_item)
 
 	def validate_website_image(self):
+		"""Validate if the website image is a public file"""
+
 		if frappe.flags.in_import:
 			return
 
-		"""Validate if the website image is a public file"""
 		auto_set_website_image = False
 		if not self.website_image and self.image:
 			auto_set_website_image = True
@@ -210,7 +220,7 @@ class WebsiteItem(WebsiteGenerator):
 
 		self.get_product_details_section(context)
 
-		if settings.enable_reviews:
+		if settings.get("enable_reviews"):
 			reviews_data = get_item_reviews(self.name)
 			context.update(reviews_data)
 			context.reviews = context.reviews[:4]

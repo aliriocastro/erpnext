@@ -1,7 +1,6 @@
 # Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and Contributors
 # License: GNU General Public License v3. See license.txt
 
-from __future__ import unicode_literals
 
 import frappe
 from frappe import _, msgprint, throw
@@ -37,7 +36,7 @@ from erpnext.assets.doctype.asset.depreciation import (
 	get_disposal_account_and_cost_center,
 	get_gl_entries_on_asset_disposal,
 	get_gl_entries_on_asset_regain,
-	post_depreciation_entries,
+	make_depreciation_entry,
 )
 from erpnext.controllers.selling_controller import SellingController
 from erpnext.healthcare.utils import manage_invoice_submit_cancel
@@ -158,6 +157,8 @@ class SalesInvoice(SellingController):
 		if self.redeem_loyalty_points and self.loyalty_program and self.loyalty_points and not self.is_consolidated:
 			validate_loyalty_points(self, self.loyalty_points)
 
+		self.reset_default_field_value("set_warehouse", "items", "warehouse")
+
 	def validate_fixed_asset(self):
 		for d in self.get("items"):
 			if d.is_fixed_asset and d.meta.get_field("asset") and d.asset:
@@ -229,9 +230,6 @@ class SalesInvoice(SellingController):
 
 		# this sequence because outstanding may get -ve
 		self.make_gl_entries()
-
-		if self.update_stock == 1:
-			self.repost_future_sle_and_gle()
 
 		if self.update_stock == 1:
 			self.repost_future_sle_and_gle()
@@ -501,7 +499,7 @@ class SalesInvoice(SellingController):
 			self.account_for_change_amount = frappe.get_cached_value('Company',  self.company,  'default_cash_account')
 
 		from erpnext.stock.get_item_details import get_pos_profile, get_pos_profile_item_details
-		if not self.pos_profile:
+		if not self.pos_profile and not self.flags.ignore_pos_profile:
 			pos_profile = get_pos_profile(self.company) or {}
 			if not pos_profile:
 				return
@@ -863,8 +861,6 @@ class SalesInvoice(SellingController):
 		self.make_exchange_gain_loss_gl_entries(gl_entries)
 		self.make_internal_transfer_gl_entries(gl_entries)
 
-		self.allocate_advance_taxes(gl_entries)
-
 		self.make_item_gl_entries(gl_entries)
 		self.make_discount_gl_entries(gl_entries)
 
@@ -949,6 +945,7 @@ class SalesInvoice(SellingController):
 						asset.db_set("disposal_date", None)
 
 						if asset.calculate_depreciation:
+							self.reverse_depreciation_entry_made_after_sale(asset)
 							self.reset_depreciation_schedule(asset)
 
 					else:
@@ -1012,21 +1009,19 @@ class SalesInvoice(SellingController):
 
 	def depreciate_asset(self, asset):
 		asset.flags.ignore_validate_update_after_submit = True
-		asset.prepare_depreciation_data(self.posting_date)
+		asset.prepare_depreciation_data(date_of_sale=self.posting_date)
 		asset.save()
 
-		post_depreciation_entries(self.posting_date)
+		make_depreciation_entry(asset.name, self.posting_date)
 
 	def reset_depreciation_schedule(self, asset):
 		asset.flags.ignore_validate_update_after_submit = True
 
 		# recreate original depreciation schedule of the asset
-		asset.prepare_depreciation_data()
+		asset.prepare_depreciation_data(date_of_return=self.posting_date)
 
 		self.modify_depreciation_schedule_for_asset_repairs(asset)
 		asset.save()
-
-		self.delete_depreciation_entry_made_after_sale(asset)
 
 	def modify_depreciation_schedule_for_asset_repairs(self, asset):
 		asset_repairs = frappe.get_all(
@@ -1041,7 +1036,7 @@ class SalesInvoice(SellingController):
 				asset_repair.modify_depreciation_schedule()
 				asset.prepare_depreciation_data()
 
-	def delete_depreciation_entry_made_after_sale(self, asset):
+	def reverse_depreciation_entry_made_after_sale(self, asset):
 		from erpnext.accounts.doctype.journal_entry.journal_entry import make_reverse_journal_entry
 
 		posting_date_of_original_invoice = self.get_posting_date_of_sales_invoice()
@@ -1056,10 +1051,20 @@ class SalesInvoice(SellingController):
 				row += 1
 
 			if schedule.schedule_date == posting_date_of_original_invoice:
-				if not self.sale_was_made_on_original_schedule_date(asset, schedule, row, posting_date_of_original_invoice):
+				if not self.sale_was_made_on_original_schedule_date(asset, schedule, row, posting_date_of_original_invoice) \
+					or self.sale_happens_in_the_future(posting_date_of_original_invoice):
+
 					reverse_journal_entry = make_reverse_journal_entry(schedule.journal_entry)
 					reverse_journal_entry.posting_date = nowdate()
+					frappe.flags.is_reverse_depr_entry = True
 					reverse_journal_entry.submit()
+
+					frappe.flags.is_reverse_depr_entry = False
+					asset.flags.ignore_validate_update_after_submit = True
+					schedule.journal_entry = None
+					depreciation_amount = self.get_depreciation_amount_in_je(reverse_journal_entry)
+					asset.finance_books[0].value_after_depreciation += depreciation_amount
+					asset.save()
 
 	def get_posting_date_of_sales_invoice(self):
 		return frappe.db.get_value('Sales Invoice', self.return_against, 'posting_date')
@@ -1074,6 +1079,18 @@ class SalesInvoice(SellingController):
 				if orginal_schedule_date == posting_date_of_original_invoice:
 					return True
 		return False
+
+	def sale_happens_in_the_future(self, posting_date_of_original_invoice):
+		if posting_date_of_original_invoice > getdate():
+			return True
+
+		return False
+
+	def get_depreciation_amount_in_je(self, journal_entry):
+		if journal_entry.accounts[0].debit_in_account_currency:
+			return journal_entry.accounts[0].debit_in_account_currency
+		else:
+			return journal_entry.accounts[0].credit_in_account_currency
 
 	@property
 	def enable_discount_accounting(self):
@@ -1299,12 +1316,20 @@ class SalesInvoice(SellingController):
 
 			serial_nos = item.serial_no or ""
 			si_serial_nos = set(get_serial_nos(serial_nos))
+			serial_no_diff = si_serial_nos - dn_serial_nos
 
-			if si_serial_nos - dn_serial_nos:
-				frappe.throw(_("Serial Numbers in row {0} does not match with Delivery Note").format(item.idx))
+			if serial_no_diff:
+				dn_link = frappe.utils.get_link_to_form("Delivery Note", item.delivery_note)
+				serial_no_msg = ", ".join(frappe.bold(d) for d in serial_no_diff)
+
+				msg = _("Row #{0}: The following Serial Nos are not present in Delivery Note {1}:").format(
+					item.idx, dn_link)
+				msg += " " + serial_no_msg
+
+				frappe.throw(msg=msg, title=_("Serial Nos Mismatch"))
 
 			if item.serial_no and cint(item.qty) != len(si_serial_nos):
-				frappe.throw(_("Row {0}: {1} Serial numbers required for Item {2}. You have provided {3}.").format(
+				frappe.throw(_("Row #{0}: {1} Serial numbers required for Item {2}. You have provided {3}.").format(
 					item.idx, item.qty, item.item_code, len(si_serial_nos)))
 
 	def update_project(self):
@@ -1472,14 +1497,8 @@ class SalesInvoice(SellingController):
 				self.status = 'Draft'
 			return
 
-		precision = self.precision("outstanding_amount")
-		outstanding_amount = flt(self.outstanding_amount, precision)
-		due_date = getdate(self.due_date)
-		nowdate = getdate()
-
-		discounting_status = None
-		if self.is_discounted:
-			discounting_status = get_discounting_status(self.name)
+		outstanding_amount = flt(self.outstanding_amount, self.precision("outstanding_amount"))
+		total = get_total_in_party_account_currency(self)
 
 		if not status:
 			if self.docstatus == 2:
@@ -1487,15 +1506,13 @@ class SalesInvoice(SellingController):
 			elif self.docstatus == 1:
 				if self.is_internal_transfer():
 					self.status = 'Internal Transfer'
-				elif outstanding_amount > 0 and due_date < nowdate and self.is_discounted and discounting_status=='Disbursed':
-					self.status = "Overdue and Discounted"
-				elif outstanding_amount > 0 and due_date < nowdate:
+				elif is_overdue(self, total):
 					self.status = "Overdue"
-				elif outstanding_amount > 0 and due_date >= nowdate and self.is_discounted and discounting_status=='Disbursed':
-					self.status = "Unpaid and Discounted"
-				elif outstanding_amount > 0 and due_date >= nowdate:
+				elif 0 < outstanding_amount < total:
+					self.status = "Partly Paid"
+				elif outstanding_amount > 0 and getdate(self.due_date) >= getdate():
 					self.status = "Unpaid"
-				#Check if outstanding amount is 0 due to credit note issued against invoice
+				# Check if outstanding amount is 0 due to credit note issued against invoice
 				elif outstanding_amount <= 0 and self.is_return == 0 and frappe.db.get_value('Sales Invoice', {'is_return': 1, 'return_against': self.name, 'docstatus': 1}):
 					self.status = "Credit Note Issued"
 				elif self.is_return == 1:
@@ -1504,11 +1521,56 @@ class SalesInvoice(SellingController):
 					self.status = "Paid"
 				else:
 					self.status = "Submitted"
+
+				if (
+					self.status in ("Unpaid", "Partly Paid", "Overdue")
+					and self.is_discounted
+					and get_discounting_status(self.name) == "Disbursed"
+				):
+					self.status += " and Discounted"
+
 			else:
 				self.status = "Draft"
 
 		if update:
 			self.db_set('status', self.status, update_modified = update_modified)
+
+
+def get_total_in_party_account_currency(doc):
+	total_fieldname = (
+		"grand_total"
+		if doc.disable_rounded_total
+		else "rounded_total"
+	)
+	if doc.party_account_currency != doc.currency:
+		total_fieldname = "base_" + total_fieldname
+
+	return flt(doc.get(total_fieldname), doc.precision(total_fieldname))
+
+def is_overdue(doc, total):
+	outstanding_amount = flt(doc.outstanding_amount, doc.precision("outstanding_amount"))
+	if outstanding_amount <= 0:
+		return
+
+	today = getdate()
+	if doc.get('is_pos') or not doc.get('payment_schedule'):
+		return getdate(doc.due_date) < today
+
+	# calculate payable amount till date
+	payment_amount_field = (
+		"base_payment_amount"
+		if doc.party_account_currency != doc.currency
+		else "payment_amount"
+	)
+
+	payable_amount = sum(
+		payment.get(payment_amount_field)
+		for payment in doc.payment_schedule
+		if getdate(payment.due_date) < today
+	)
+
+	return (total - outstanding_amount) < payable_amount
+
 
 def get_discounting_status(sales_invoice):
 	status = None
@@ -1984,22 +2046,23 @@ def update_multi_mode_option(doc, pos_profile):
 	def append_payment(payment_mode):
 		payment = doc.append('payments', {})
 		payment.default = payment_mode.default
-		payment.mode_of_payment = payment_mode.parent
+		payment.mode_of_payment = payment_mode.mop
 		payment.account = payment_mode.default_account
 		payment.type = payment_mode.type
 
 	doc.set('payments', [])
 	invalid_modes = []
-	for pos_payment_method in pos_profile.get('payments'):
-		pos_payment_method = pos_payment_method.as_dict()
+	mode_of_payments = [d.mode_of_payment for d in pos_profile.get('payments')]
+	mode_of_payments_info = get_mode_of_payments_info(mode_of_payments, doc.company)
 
-		payment_mode = get_mode_of_payment_info(pos_payment_method.mode_of_payment, doc.company)
+	for row in pos_profile.get('payments'):
+		payment_mode = mode_of_payments_info.get(row.mode_of_payment)
 		if not payment_mode:
-			invalid_modes.append(get_link_to_form("Mode of Payment", pos_payment_method.mode_of_payment))
+			invalid_modes.append(get_link_to_form("Mode of Payment", row.mode_of_payment))
 			continue
 
-		payment_mode[0].default = pos_payment_method.default
-		append_payment(payment_mode[0])
+		payment_mode.default = row.default
+		append_payment(payment_mode)
 
 	if invalid_modes:
 		if invalid_modes == 1:
@@ -2014,6 +2077,24 @@ def get_all_mode_of_payments(doc):
 		from `tabMode of Payment Account` mpa,`tabMode of Payment` mp
 		where mpa.parent = mp.name and mpa.company = %(company)s and mp.enabled = 1""",
 	{'company': doc.company}, as_dict=1)
+
+def get_mode_of_payments_info(mode_of_payments, company):
+	data = frappe.db.sql(
+		"""
+		select
+			mpa.default_account, mpa.parent as mop, mp.type as type
+		from
+			`tabMode of Payment Account` mpa,`tabMode of Payment` mp
+		where
+			mpa.parent = mp.name and
+			mpa.company = %s and
+			mp.enabled = 1 and
+			mp.name in %s
+		group by
+			mp.name
+		""", (company, mode_of_payments), as_dict=1)
+
+	return {row.get('mop'): row for row in data}
 
 def get_mode_of_payment_info(mode_of_payment, company):
 	return frappe.db.sql("""

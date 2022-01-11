@@ -1,6 +1,5 @@
 # Copyright (c) 2018, Frappe Technologies Pvt. Ltd. and Contributors
 # License: GNU General Public License v3. See license.txt
-from __future__ import unicode_literals
 
 import copy
 import unittest
@@ -131,6 +130,7 @@ class TestSalesInvoice(unittest.TestCase):
 
 	def test_payment_entry_unlink_against_invoice(self):
 		from erpnext.accounts.doctype.payment_entry.test_payment_entry import get_payment_entry
+
 		si = frappe.copy_doc(test_records[0])
 		si.is_pos = 0
 		si.insert()
@@ -154,6 +154,7 @@ class TestSalesInvoice(unittest.TestCase):
 
 	def test_payment_entry_unlink_against_standalone_credit_note(self):
 		from erpnext.accounts.doctype.payment_entry.test_payment_entry import get_payment_entry
+
 		si1 = create_sales_invoice(rate=1000)
 		si2 = create_sales_invoice(rate=300)
 		si3 = create_sales_invoice(qty=-1, rate=300, is_return=1)
@@ -1083,8 +1084,6 @@ class TestSalesInvoice(unittest.TestCase):
 
 		actual_qty_1 = get_qty_after_transaction(item_code = "_Test Item", warehouse = "Stores - TCP1")
 
-		frappe.db.commit()
-
 		self.assertEqual(actual_qty_0 - 5, actual_qty_1)
 
 		# outgoing_rate
@@ -1439,15 +1438,22 @@ class TestSalesInvoice(unittest.TestCase):
 		itemised_tax, itemised_taxable_amount = get_itemised_tax_breakup_data(si)
 
 		expected_itemised_tax = {
-			"999800": {
+			"_Test Item": {
 				"Service Tax": {
 					"tax_rate": 10.0,
-					"tax_amount": 1500.0
+					"tax_amount": 1000.0
+				}
+			},
+			"_Test Item 2": {
+				"Service Tax": {
+					"tax_rate": 10.0,
+					"tax_amount": 500.0
 				}
 			}
 		}
 		expected_itemised_taxable_amount = {
-			"999800": 15000.0
+			"_Test Item": 10000.0,
+			"_Test Item 2": 5000.0
 		}
 
 		self.assertEqual(itemised_tax, expected_itemised_tax)
@@ -1617,28 +1623,12 @@ class TestSalesInvoice(unittest.TestCase):
 
 		si.shipping_rule = shipping_rule.name
 		si.insert()
-
-		shipping_amount = 0.0
-		for condition in shipping_rule.get("conditions"):
-			if not condition.to_value or (flt(condition.from_value) <= si.net_total <= flt(condition.to_value)):
-				shipping_amount = condition.shipping_amount
-
-		shipping_charge = {
-			"doctype": "Sales Taxes and Charges",
-			"category": "Valuation and Total",
-			"charge_type": "Actual",
-			"account_head": shipping_rule.account,
-			"cost_center": shipping_rule.cost_center,
-			"tax_amount": shipping_amount,
-			"description": shipping_rule.name
-		}
-		si.append("taxes", shipping_charge)
 		si.save()
 
 		self.assertEqual(si.net_total, 1250)
 
-		self.assertEqual(si.total_taxes_and_charges, 577.05)
-		self.assertEqual(si.grand_total, 1827.05)
+		self.assertEqual(si.total_taxes_and_charges, 468.85)
+		self.assertEqual(si.grand_total, 1718.85)
 
 
 
@@ -1658,6 +1648,7 @@ class TestSalesInvoice(unittest.TestCase):
 
 	def test_credit_note(self):
 		from erpnext.accounts.doctype.payment_entry.test_payment_entry import get_payment_entry
+
 		si = create_sales_invoice(item_code = "_Test Item", qty = (5 * -1), rate=500, is_return = 1)
 
 		outstanding_amount = get_outstanding_amount(si.doctype,
@@ -1809,6 +1800,47 @@ class TestSalesInvoice(unittest.TestCase):
 
 		check_gl_entries(self, si.name, expected_gle, "2019-01-30")
 
+	def test_deferred_revenue_post_account_freeze_upto_by_admin(self):
+		frappe.set_user("Administrator")
+
+		frappe.db.set_value('Accounts Settings', None, 'acc_frozen_upto', None)
+		frappe.db.set_value('Accounts Settings', None, 'frozen_accounts_modifier', None)
+
+		deferred_account = create_account(account_name="Deferred Revenue",
+			parent_account="Current Liabilities - _TC", company="_Test Company")
+
+		item = create_item("_Test Item for Deferred Accounting")
+		item.enable_deferred_revenue = 1
+		item.deferred_revenue_account = deferred_account
+		item.no_of_months = 12
+		item.save()
+
+		si = create_sales_invoice(item=item.name, posting_date="2019-01-10", do_not_save=True)
+		si.items[0].enable_deferred_revenue = 1
+		si.items[0].service_start_date = "2019-01-10"
+		si.items[0].service_end_date = "2019-03-15"
+		si.items[0].deferred_revenue_account = deferred_account
+		si.save()
+		si.submit()
+
+		frappe.db.set_value('Accounts Settings', None, 'acc_frozen_upto', getdate('2019-01-31'))
+		frappe.db.set_value('Accounts Settings', None, 'frozen_accounts_modifier', 'System Manager')
+
+		pda1 = frappe.get_doc(dict(
+			doctype='Process Deferred Accounting',
+			posting_date=nowdate(),
+			start_date="2019-01-01",
+			end_date="2019-03-31",
+			type="Income",
+			company="_Test Company"
+		))
+
+		pda1.insert()
+		self.assertRaises(frappe.ValidationError, pda1.submit)
+
+		frappe.db.set_value('Accounts Settings', None, 'acc_frozen_upto', None)
+		frappe.db.set_value('Accounts Settings', None, 'frozen_accounts_modifier', None)
+
 	def test_fixed_deferred_revenue(self):
 		deferred_account = create_account(account_name="Deferred Revenue",
 			parent_account="Current Liabilities - _TC", company="_Test Company")
@@ -1908,11 +1940,7 @@ class TestSalesInvoice(unittest.TestCase):
 		self.assertEqual(target_doc.company, "_Test Company 1")
 		self.assertEqual(target_doc.supplier, "_Test Internal Supplier")
 
-	def test_sle_if_target_warehouse_exists_accidentally(self):
-		"""
-			Check if inward entry exists if Target Warehouse accidentally exists
-			but Customer is not an internal customer.
-		"""
+	def test_sle_for_target_warehouse(self):
 		se = make_stock_entry(
 			item_code="138-CMS Shoe",
 			target="Finished Goods - _TC",
@@ -1933,9 +1961,9 @@ class TestSalesInvoice(unittest.TestCase):
 		sles = frappe.get_all("Stock Ledger Entry", filters={"voucher_no": si.name},
 			fields=["name", "actual_qty"])
 
-		# check if only one SLE for outward entry is created
-		self.assertEqual(len(sles), 1)
-		self.assertEqual(sles[0].actual_qty, -1)
+		# check if both SLEs are created
+		self.assertEqual(len(sles), 2)
+		self.assertEqual(sum(d.actual_qty for d in sles), 0.0)
 
 		# tear down
 		si.cancel()
@@ -2176,9 +2204,9 @@ class TestSalesInvoice(unittest.TestCase):
 		check_gl_entries(self, si.name, expected_gle, add_days(nowdate(), -1))
 		enable_discount_accounting(enable=0)
 
-	def test_asset_depreciation_on_sale(self):
+	def test_asset_depreciation_on_sale_with_pro_rata(self):
 		"""
-			Tests if an Asset set to depreciate yearly on June 30, that gets sold on Sept 30, creates an additional depreciation entry on Sept 30.
+			Tests if an Asset set to depreciate yearly on June 30, that gets sold on Sept 30, creates an additional depreciation entry on its date of sale.
 		"""
 
 		create_asset_data()
@@ -2191,7 +2219,7 @@ class TestSalesInvoice(unittest.TestCase):
 		expected_values = [
 			["2020-06-30", 1311.48, 1311.48],
 			["2021-06-30", 20000.0, 21311.48],
-			["2021-09-30", 3966.76, 25278.24]
+			["2021-09-30", 5041.1, 26352.58]
 		]
 
 		for i, schedule in enumerate(asset.schedules):
@@ -2200,10 +2228,64 @@ class TestSalesInvoice(unittest.TestCase):
 			self.assertEqual(expected_values[i][2], schedule.accumulated_depreciation_amount)
 			self.assertTrue(schedule.journal_entry)
 
+	def test_asset_depreciation_on_sale_without_pro_rata(self):
+		"""
+			Tests if an Asset set to depreciate yearly on Dec 31, that gets sold on Dec 31 after two years, created an additional depreciation entry on its date of sale.
+		"""
+
+		create_asset_data()
+		asset = create_asset(item_code="Macbook Pro", calculate_depreciation=1,
+			available_for_use_date=getdate("2019-12-31"), total_number_of_depreciations=3,
+			expected_value_after_useful_life=10000, depreciation_start_date=getdate("2020-12-31"), submit=1)
+
+		post_depreciation_entries(getdate("2021-09-30"))
+
+		create_sales_invoice(item_code="Macbook Pro", asset=asset.name, qty=1, rate=90000, posting_date=getdate("2021-12-31"))
+		asset.load_from_db()
+
+		expected_values = [
+			["2020-12-31", 30000, 30000],
+			["2021-12-31", 30000, 60000]
+		]
+
+		for i, schedule in enumerate(asset.schedules):
+			self.assertEqual(getdate(expected_values[i][0]), schedule.schedule_date)
+			self.assertEqual(expected_values[i][1], schedule.depreciation_amount)
+			self.assertEqual(expected_values[i][2], schedule.accumulated_depreciation_amount)
+			self.assertTrue(schedule.journal_entry)
+
+	def test_depreciation_on_return_of_sold_asset(self):
+		from erpnext.controllers.sales_and_purchase_return import make_return_doc
+
+		create_asset_data()
+		asset = create_asset(item_code="Macbook Pro", calculate_depreciation=1, submit=1)
+		post_depreciation_entries(getdate("2021-09-30"))
+
+		si = create_sales_invoice(item_code="Macbook Pro", asset=asset.name, qty=1, rate=90000, posting_date=getdate("2021-09-30"))
+		return_si = make_return_doc("Sales Invoice", si.name)
+		return_si.submit()
+		asset.load_from_db()
+
+		expected_values = [
+			["2020-06-30", 1311.48, 1311.48, True],
+			["2021-06-30", 20000.0, 21311.48, True],
+			["2022-06-30", 20000.0, 41311.48, False],
+			["2023-06-30", 20000.0, 61311.48, False],
+			["2024-06-30",  20000.0, 81311.48,  False],
+			["2025-06-06",  18688.52,  100000.0, False]
+		]
+
+		for i, schedule in enumerate(asset.schedules):
+			self.assertEqual(getdate(expected_values[i][0]), schedule.schedule_date)
+			self.assertEqual(expected_values[i][1], schedule.depreciation_amount)
+			self.assertEqual(expected_values[i][2], schedule.accumulated_depreciation_amount)
+			self.assertEqual(schedule.journal_entry, schedule.journal_entry)
+
 	def test_sales_invoice_against_supplier(self):
 		from erpnext.accounts.doctype.opening_invoice_creation_tool.test_opening_invoice_creation_tool import (
 			make_customer,
 		)
+		from erpnext.accounts.doctype.party_link.party_link import create_party_link
 		from erpnext.buying.doctype.supplier.test_supplier import create_supplier
 
 		# create a customer
@@ -2212,13 +2294,7 @@ class TestSalesInvoice(unittest.TestCase):
 		supplier = create_supplier(supplier_name="_Test Common Supplier").name
 
 		# create a party link between customer & supplier
-		# set primary role as supplier
-		party_link = frappe.new_doc("Party Link")
-		party_link.primary_role = "Supplier"
-		party_link.primary_party = supplier
-		party_link.secondary_role = "Customer"
-		party_link.secondary_party = customer
-		party_link.save()
+		party_link = create_party_link("Supplier", supplier, customer)
 
 		# enable common party accounting
 		frappe.db.set_value('Accounts Settings', None, 'enable_common_party_accounting', 1)
@@ -2245,6 +2321,115 @@ class TestSalesInvoice(unittest.TestCase):
 
 		party_link.delete()
 		frappe.db.set_value('Accounts Settings', None, 'enable_common_party_accounting', 0)
+
+	def test_payment_statuses(self):
+		from erpnext.accounts.doctype.payment_entry.test_payment_entry import get_payment_entry
+
+		today = nowdate()
+
+		# Test Overdue
+		si = create_sales_invoice(do_not_submit=True)
+		si.payment_schedule = []
+		si.append("payment_schedule", {
+			"due_date": add_days(today, -5),
+			"invoice_portion": 50,
+			"payment_amount": si.grand_total / 2
+		})
+		si.append("payment_schedule", {
+			"due_date": add_days(today, 5),
+			"invoice_portion": 50,
+			"payment_amount": si.grand_total / 2
+		})
+		si.submit()
+		self.assertEqual(si.status, "Overdue")
+
+		# Test payment less than due amount
+		pe = get_payment_entry("Sales Invoice", si.name, bank_account="_Test Bank - _TC")
+		pe.reference_no = "1"
+		pe.reference_date = nowdate()
+		pe.paid_amount = 1
+		pe.references[0].allocated_amount = pe.paid_amount
+		pe.submit()
+		si.reload()
+		self.assertEqual(si.status, "Overdue")
+
+		# Test Partly Paid
+		pe = frappe.copy_doc(pe)
+		pe.paid_amount = si.grand_total / 2
+		pe.references[0].allocated_amount = pe.paid_amount
+		pe.submit()
+		si.reload()
+		self.assertEqual(si.status, "Partly Paid")
+
+		# Test Paid
+		pe = get_payment_entry("Sales Invoice", si.name, bank_account="_Test Bank - _TC")
+		pe.reference_no = "1"
+		pe.reference_date = nowdate()
+		pe.paid_amount = si.outstanding_amount
+		pe.submit()
+		si.reload()
+		self.assertEqual(si.status, "Paid")
+
+	def test_sales_commission(self):
+		si = frappe.copy_doc(test_records[0])
+		item = copy.deepcopy(si.get('items')[0])
+		item.update({
+			"qty": 1,
+			"rate": 500,
+			"grant_commission": 1
+		})
+		si.append("items", item)
+
+		# Test valid values
+		for commission_rate, total_commission in ((0, 0), (10, 50), (100, 500)):
+			si.commission_rate = commission_rate
+			si.save()
+			self.assertEqual(si.amount_eligible_for_commission, 500)
+			self.assertEqual(si.total_commission, total_commission)
+
+		# Test invalid values
+		for commission_rate in (101, -1):
+			si.reload()
+			si.commission_rate = commission_rate
+			self.assertRaises(frappe.ValidationError, si.save)
+
+	def test_sales_invoice_submission_post_account_freezing_date(self):
+		frappe.db.set_value('Accounts Settings', None, 'acc_frozen_upto', add_days(getdate(), 1))
+		si = create_sales_invoice(do_not_save=True)
+		si.posting_date = add_days(getdate(), 1)
+		si.save()
+
+		self.assertRaises(frappe.ValidationError, si.submit)
+		si.posting_date = getdate()
+		si.submit()
+
+		frappe.db.set_value('Accounts Settings', None, 'acc_frozen_upto', None)
+
+	def test_over_billing_case_against_delivery_note(self):
+		'''
+			Test a case where duplicating the item with qty = 1 in the invoice
+			allows overbilling even if it is disabled
+		'''
+		from erpnext.stock.doctype.delivery_note.test_delivery_note import create_delivery_note
+
+		over_billing_allowance = frappe.db.get_single_value('Accounts Settings', 'over_billing_allowance')
+		frappe.db.set_value('Accounts Settings', None, 'over_billing_allowance', 0)
+
+		dn = create_delivery_note()
+		dn.submit()
+
+		si = make_sales_invoice(dn.name)
+		# make a copy of first item and add it to invoice
+		item_copy = frappe.copy_doc(si.items[0])
+		si.append('items', item_copy)
+		si.save()
+
+		with self.assertRaises(frappe.ValidationError) as err:
+			si.submit()
+
+		self.assertTrue("cannot overbill" in str(err.exception).lower())
+
+		frappe.db.set_value('Accounts Settings', None, 'over_billing_allowance', over_billing_allowance)
 
 def get_sales_invoice_for_e_invoice():
 	si = make_sales_invoice_for_ewaybill()

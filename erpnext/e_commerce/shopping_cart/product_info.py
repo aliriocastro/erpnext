@@ -1,7 +1,6 @@
 # Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and Contributors
 # License: GNU General Public License v3. See license.txt
 
-from __future__ import unicode_literals
 
 import frappe
 
@@ -23,7 +22,11 @@ def get_product_info_for_website(item_code, skip_quotation_creation=False):
 
 	cart_settings = get_shopping_cart_settings()
 	if not cart_settings.enabled:
-		return frappe._dict()
+		# return settings even if cart is disabled
+		return frappe._dict({
+			"product_info": {},
+			"cart_settings": cart_settings
+		})
 
 	cart_quotation = frappe._dict()
 	if not skip_quotation_creation:
