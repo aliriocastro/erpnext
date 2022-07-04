@@ -40,18 +40,13 @@ class BankClearance(Document):
 				and t1.posting_date >= %(from)s and t1.posting_date <= %(to)s
 				and ifnull(t1.is_opening, 'No') = 'No' {condition}
 			group by t2.account, t1.name
-<<<<<<< HEAD
 			order by t1.posting_date ASC, t1.cheque_no ASC
-		""".format(condition=condition), {"account": self.account, "from": self.from_date, "to": self.to_date}, as_dict=1)
-=======
-			order by t1.posting_date ASC, t1.name DESC
 		""".format(
 				condition=condition
 			),
 			{"account": self.account, "from": self.from_date, "to": self.to_date},
 			as_dict=1,
 		)
->>>>>>> 53024be34778f3940adb522e40b19ad83b7f26b3
 
 		if self.bank_account:
 			condition += "and bank_account = %(bank_account)s"
@@ -71,12 +66,7 @@ class BankClearance(Document):
 				and posting_date >= %(from)s and posting_date <= %(to)s
 				{condition}
 			order by
-<<<<<<< HEAD
 				posting_date ASC, reference_date DESC
-		""".format(condition=condition), {"account": self.account, "from":self.from_date,
-				"to": self.to_date, "bank_account": self.bank_account}, as_dict=1)
-=======
-				posting_date ASC, name DESC
 		""".format(
 				condition=condition
 			),
@@ -134,7 +124,6 @@ class BankClearance(Document):
 			.orderby(loan_repayment.posting_date)
 			.orderby(loan_repayment.name, frappe.qb.desc)
 		).run(as_dict=1)
->>>>>>> 53024be34778f3940adb522e40b19ad83b7f26b3
 
 		pos_sales_invoices, pos_purchase_invoices = [], []
 		if self.include_pos_transactions:
