@@ -382,6 +382,7 @@ doc_events = {
 		"validate": [
 			"erpnext.regional.india.utils.validate_document_name",
 			"erpnext.regional.india.utils.update_taxable_values",
+			"erpnext.regional.india.utils.validate_sez_and_export_invoices",
 		],
 	},
 	"POS Invoice": {"on_submit": ["erpnext.regional.saudi_arabia.utils.create_qr_code"]},
@@ -454,9 +455,12 @@ after_migrate = ["erpnext.setup.install.update_select_perm_after_install"]
 
 scheduler_events = {
 	"cron": {
+		"0/5 * * * *": [
+			"erpnext.manufacturing.doctype.bom_update_log.bom_update_log.resume_bom_cost_update_jobs",
+		],
 		"0/30 * * * *": [
 			"erpnext.utilities.doctype.video.video.update_youtube_data",
-		]
+		],
 	},
 	"all": [
 		"erpnext.projects.doctype.project.project.project_status_update_reminder",
