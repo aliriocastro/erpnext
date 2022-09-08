@@ -1770,6 +1770,7 @@
    "print_hide": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "sales_partner",
    "fieldtype": "Link",
    "hide_days": 1,
@@ -2040,12 +2041,11 @@
    "link_fieldname": "consolidated_invoice"
   }
  ],
- "modified": "2022-06-10 03:52:51.409913",
+ "modified": "2022-09-08 00:52:21.786785",
  "modified_by": "Administrator",
  "module": "Accounts",
  "name": "Sales Invoice",
  "name_case": "Title Case",
- "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [
   {
@@ -2091,7 +2091,6 @@
  "show_name_in_global_search": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": [],
  "timeline_field": "customer",
  "title_field": "title",
  "track_changes": 1,
