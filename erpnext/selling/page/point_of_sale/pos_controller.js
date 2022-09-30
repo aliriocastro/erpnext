@@ -497,7 +497,10 @@ erpnext.PointOfSale.Controller = class {
 
 	set_pos_profile_data() {
 		if (this.company && !this.frm.doc.company) this.frm.doc.company = this.company;
-		if (this.pos_profile && !this.frm.doc.pos_profile) this.frm.doc.pos_profile = this.pos_profile;
+		if ((this.pos_profile && !this.frm.doc.pos_profile) | (this.frm.doc.is_return && this.pos_profile != this.frm.doc.pos_profile)) {
+			this.frm.doc.pos_profile = this.pos_profile;
+		}
+
 		if (!this.frm.doc.company) return;
 
 		return this.frm.trigger("set_pos_data");
@@ -657,7 +660,7 @@ erpnext.PointOfSale.Controller = class {
 			} else {
 				return;
 			}
-		} else if (available_qty < qty_needed) {
+		} else if (is_stock_item && available_qty < qty_needed) {
 			frappe.throw({
 				message: __('Stock quantity not enough for Item Code: {0} under warehouse {1}. Available quantity {2}.', [bold_item_code, bold_warehouse, bold_available_qty]),
 				indicator: 'orange'
@@ -691,7 +694,7 @@ erpnext.PointOfSale.Controller = class {
 			callback(res) {
 				if (!me.item_stock_map[item_code])
 					me.item_stock_map[item_code] = {};
-				me.item_stock_map[item_code][warehouse] = res.message[0];
+				me.item_stock_map[item_code][warehouse] = res.message;
 			}
 		});
 	}

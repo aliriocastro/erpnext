@@ -25,7 +25,10 @@ from erpnext.accounts.utils import (
 	get_stock_and_account_balance,
 )
 from erpnext.controllers.accounts_controller import AccountsController
-from erpnext.hr.doctype.expense_claim.expense_claim import update_reimbursed_amount
+from erpnext.hr.doctype.expense_claim.expense_claim import (
+	get_outstanding_amount_for_claim,
+	update_reimbursed_amount,
+)
 
 
 class StockAccountInvalidTransaction(frappe.ValidationError):
@@ -191,7 +194,9 @@ class JournalEntry(AccountsController):
 			}
 		)
 
-		tax_withholding_details = get_party_tax_withholding_details(inv, self.tax_withholding_category)
+		tax_withholding_details, advance_taxes, voucher_wise_amount = get_party_tax_withholding_details(
+			inv, self.tax_withholding_category
+		)
 
 		if not tax_withholding_details:
 			return
@@ -935,15 +940,12 @@ class JournalEntry(AccountsController):
 	def validate_expense_claim(self):
 		for d in self.accounts:
 			if d.reference_type == "Expense Claim":
-				sanctioned_amount, reimbursed_amount = frappe.db.get_value(
-					"Expense Claim", d.reference_name, ("total_sanctioned_amount", "total_amount_reimbursed")
-				)
-				pending_amount = flt(sanctioned_amount) - flt(reimbursed_amount)
-				if d.debit > pending_amount:
+				outstanding_amt = get_outstanding_amount_for_claim(d.reference_name)
+				if d.debit > outstanding_amt:
 					frappe.throw(
 						_(
-							"Row No {0}: Amount cannot be greater than Pending Amount against Expense Claim {1}. Pending Amount is {2}"
-						).format(d.idx, d.reference_name, pending_amount)
+							"Row No {0}: Amount cannot be greater than the Outstanding Amount against Expense Claim {1}. Outstanding Amount is {2}"
+						).format(d.idx, d.reference_name, outstanding_amt)
 					)
 
 	def validate_credit_debit_note(self):
