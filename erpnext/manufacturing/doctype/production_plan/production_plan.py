@@ -27,6 +27,7 @@ from six import iteritems
 from erpnext.manufacturing.doctype.bom.bom import get_children, validate_bom_no
 from erpnext.manufacturing.doctype.work_order.work_order import get_item_details
 from erpnext.setup.doctype.item_group.item_group import get_item_group_defaults
+from erpnext.stock.get_item_details import get_conversion_factor
 from erpnext.utilities.transaction_base import validate_uom_is_integer
 
 
@@ -977,11 +978,25 @@ def get_material_request_items(
 	if include_safety_stock:
 		required_qty += flt(row["safety_stock"])
 
+	item_details = frappe.get_cached_value(
+		"Item", row.item_code, ["purchase_uom", "stock_uom"], as_dict=1
+	)
+
+	conversion_factor = 1.0
+	if (
+		row.get("default_material_request_type") == "Purchase"
+		and item_details.purchase_uom
+		and item_details.purchase_uom != item_details.stock_uom
+	):
+		conversion_factor = (
+			get_conversion_factor(row.item_code, item_details.purchase_uom).get("conversion_factor") or 1.0
+		)
+
 	if required_qty > 0:
 		return {
 			"item_code": row.item_code,
 			"item_name": row.item_name,
-			"quantity": required_qty,
+			"quantity": required_qty / conversion_factor,
 			"required_bom_qty": total_qty,
 			"stock_uom": row.get("stock_uom"),
 			"warehouse": warehouse
