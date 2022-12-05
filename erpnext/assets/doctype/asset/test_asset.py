@@ -7,7 +7,7 @@ import frappe
 from frappe.utils import add_days, add_months, cstr, flt, get_last_day, getdate, nowdate
 
 from erpnext.accounts.doctype.purchase_invoice.test_purchase_invoice import make_purchase_invoice
-from erpnext.assets.doctype.asset.asset import make_sales_invoice
+from erpnext.assets.doctype.asset.asset import make_sales_invoice, update_maintenance_status
 from erpnext.assets.doctype.asset.depreciation import (
 	post_depreciation_entries,
 	restore_asset,
@@ -145,6 +145,7 @@ class TestAsset(AssetSetup):
 	def test_is_fixed_asset_set(self):
 		asset = create_asset(is_existing_asset=1)
 		doc = frappe.new_doc("Purchase Invoice")
+		doc.company = "_Test Company"
 		doc.supplier = "_Test Supplier"
 		doc.append("items", {"item_code": "Macbook Pro", "qty": 1, "asset": asset.name})
 
@@ -236,6 +237,34 @@ class TestAsset(AssetSetup):
 		si.cancel()
 
 		self.assertEqual(frappe.db.get_value("Asset", asset.name, "status"), "Partially Depreciated")
+
+	def test_asset_with_maintenance_required_status_after_sale(self):
+		asset = create_asset(
+			calculate_depreciation=1,
+			available_for_use_date="2020-06-06",
+			purchase_date="2020-01-01",
+			expected_value_after_useful_life=10000,
+			total_number_of_depreciations=3,
+			frequency_of_depreciation=10,
+			maintenance_required=1,
+			depreciation_start_date="2020-12-31",
+			submit=1,
+		)
+
+		post_depreciation_entries(date="2021-01-01")
+
+		si = make_sales_invoice(asset=asset.name, item_code="Macbook Pro", company="_Test Company")
+		si.customer = "_Test Customer"
+		si.due_date = nowdate()
+		si.get("items")[0].rate = 25000
+		si.insert()
+		si.submit()
+
+		self.assertEqual(frappe.db.get_value("Asset", asset.name, "status"), "Sold")
+
+		update_maintenance_status()
+
+		self.assertEqual(frappe.db.get_value("Asset", asset.name, "status"), "Sold")
 
 	def test_expense_head(self):
 		pr = make_purchase_receipt(
@@ -702,6 +731,8 @@ class TestDepreciationMethods(AssetSetup):
 		self.assertEquals(asset.finance_books[0].value_after_depreciation, 98000.0)
 
 	def test_monthly_depreciation_by_wdv_method(self):
+		existing_precision = frappe.db.get_default("float_precision")
+		frappe.db.set_default("float_precision", 3)
 		asset = create_asset(
 			calculate_depreciation=1,
 			available_for_use_date="2022-02-15",
@@ -715,12 +746,12 @@ class TestDepreciationMethods(AssetSetup):
 		)
 
 		expected_schedules = [
-			["2022-02-28", 645.0, 645.0],
-			["2022-03-31", 1206.8, 1851.8],
-			["2022-04-30", 1051.12, 2902.92],
-			["2022-05-31", 915.52, 3818.44],
-			["2022-06-30", 797.42, 4615.86],
-			["2022-07-15", 384.14, 5000.0],
+			["2022-02-28", 647.25, 647.25],
+			["2022-03-31", 1210.71, 1857.96],
+			["2022-04-30", 1053.99, 2911.95],
+			["2022-05-31", 917.55, 3829.5],
+			["2022-06-30", 798.77, 4628.27],
+			["2022-07-15", 371.73, 5000.0],
 		]
 
 		schedules = [
@@ -731,8 +762,8 @@ class TestDepreciationMethods(AssetSetup):
 			]
 			for d in asset.get("schedules")
 		]
-
 		self.assertEqual(schedules, expected_schedules)
+		frappe.db.set_default("float_precision", existing_precision)
 
 
 class TestDepreciationBasics(AssetSetup):
@@ -1350,6 +1381,7 @@ def create_asset(**args):
 			"number_of_depreciations_booked": args.number_of_depreciations_booked or 0,
 			"gross_purchase_amount": args.gross_purchase_amount or 100000,
 			"purchase_receipt_amount": args.purchase_receipt_amount or 100000,
+			"maintenance_required": args.maintenance_required or 0,
 			"warehouse": args.warehouse or "_Test Warehouse - _TC",
 			"available_for_use_date": args.available_for_use_date or "2020-06-06",
 			"location": args.location or "Test Location",

@@ -94,27 +94,26 @@ def repost_current_voucher(args, allow_negative_stock=False, via_landed_cost_vou
 		if not args.get("posting_date"):
 			args["posting_date"] = nowdate()
 
-		if args.get("is_cancelled") and via_landed_cost_voucher:
-			return
-
-		# Reposts only current voucher SL Entries
-		# Updates valuation rate, stock value, stock queue for current transaction
-		update_entries_after(
-			{
-				"item_code": args.get("item_code"),
-				"warehouse": args.get("warehouse"),
-				"posting_date": args.get("posting_date"),
-				"posting_time": args.get("posting_time"),
-				"voucher_type": args.get("voucher_type"),
-				"voucher_no": args.get("voucher_no"),
-				"sle_id": args.get("name"),
-				"creation": args.get("creation"),
-			},
-			allow_negative_stock=allow_negative_stock,
-			via_landed_cost_voucher=via_landed_cost_voucher,
-		)
+		if not (args.get("is_cancelled") and via_landed_cost_voucher):
+			# Reposts only current voucher SL Entries
+			# Updates valuation rate, stock value, stock queue for current transaction
+			update_entries_after(
+				{
+					"item_code": args.get("item_code"),
+					"warehouse": args.get("warehouse"),
+					"posting_date": args.get("posting_date"),
+					"posting_time": args.get("posting_time"),
+					"voucher_type": args.get("voucher_type"),
+					"voucher_no": args.get("voucher_no"),
+					"sle_id": args.get("name"),
+					"creation": args.get("creation"),
+				},
+				allow_negative_stock=allow_negative_stock,
+				via_landed_cost_voucher=via_landed_cost_voucher,
+			)
 
 		# update qty in future sle and Validate negative qty
+		# For LCV: update future balances with -ve LCV SLE, which will be balanced by +ve LCV SLE
 		update_qty_in_future_sle(args, allow_negative_stock)
 
 
@@ -208,8 +207,14 @@ def repost_future_sle(
 	allow_negative_stock=None,
 	via_landed_cost_voucher=False,
 ):
-	if not args and voucher_type and voucher_no:
-		args = get_items_to_be_repost(voucher_type, voucher_no, doc)
+	if not args:
+		args = []  # set args to empty list if None to avoid enumerate error
+
+	items_to_be_repost = get_items_to_be_repost(
+		voucher_type=voucher_type, voucher_no=voucher_no, doc=doc
+	)
+	if items_to_be_repost:
+		args = items_to_be_repost
 
 	distinct_item_warehouses = get_distinct_item_warehouse(args, doc)
 	affected_transactions = get_affected_transactions(doc)
@@ -247,15 +252,10 @@ def repost_future_sle(
 				data.sle_changed = False
 		i += 1
 
-		if doc and i % 2 == 0:
+		if doc:
 			update_args_in_repost_item_valuation(
 				doc, i, args, distinct_item_warehouses, affected_transactions
 			)
-
-	if doc and args:
-		update_args_in_repost_item_valuation(
-			doc, i, args, distinct_item_warehouses, affected_transactions
-		)
 
 
 def update_args_in_repost_item_valuation(
@@ -281,17 +281,21 @@ def update_args_in_repost_item_valuation(
 	)
 
 
-def get_items_to_be_repost(voucher_type, voucher_no, doc=None):
+def get_items_to_be_repost(voucher_type=None, voucher_no=None, doc=None):
+	items_to_be_repost = []
 	if doc and doc.items_to_be_repost:
-		return json.loads(doc.items_to_be_repost) or []
+		items_to_be_repost = json.loads(doc.items_to_be_repost) or []
 
-	return frappe.db.get_all(
-		"Stock Ledger Entry",
-		filters={"voucher_type": voucher_type, "voucher_no": voucher_no},
-		fields=["item_code", "warehouse", "posting_date", "posting_time", "creation"],
-		order_by="creation asc",
-		group_by="item_code, warehouse",
-	)
+	if not items_to_be_repost and voucher_type and voucher_no:
+		items_to_be_repost = frappe.db.get_all(
+			"Stock Ledger Entry",
+			filters={"voucher_type": voucher_type, "voucher_no": voucher_no},
+			fields=["item_code", "warehouse", "posting_date", "posting_time", "creation"],
+			order_by="creation asc",
+			group_by="item_code, warehouse",
+		)
+
+	return items_to_be_repost
 
 
 def get_distinct_item_warehouse(args=None, doc=None):
@@ -491,7 +495,9 @@ class update_entries_after(object):
 		elif dependant_sle.item_code == self.item_code and dependant_sle.warehouse in self.data:
 			return entries_to_fix
 		else:
-			return self.append_future_sle_for_dependant(dependant_sle, entries_to_fix)
+			self.initialize_previous_data(dependant_sle)
+			self.update_distinct_item_warehouses(dependant_sle)
+			return entries_to_fix
 
 	def update_distinct_item_warehouses(self, dependant_sle):
 		key = (dependant_sle.item_code, dependant_sle.warehouse)
@@ -507,17 +513,6 @@ class update_entries_after(object):
 				val.sle_changed = True
 				self.distinct_item_warehouses[key] = val
 				self.new_items_found = True
-
-	def append_future_sle_for_dependant(self, dependant_sle, entries_to_fix):
-		self.initialize_previous_data(dependant_sle)
-
-		args = self.data[dependant_sle.warehouse].previous_sle or frappe._dict(
-			{"item_code": self.item_code, "warehouse": dependant_sle.warehouse}
-		)
-		future_sle_for_dependant = list(self.get_sle_after_datetime(args))
-
-		entries_to_fix.extend(future_sle_for_dependant)
-		return sorted(entries_to_fix, key=lambda k: k["timestamp"])
 
 	def process_sle(self, sle):
 		from erpnext.stock.doctype.serial_no.serial_no import get_serial_nos
@@ -536,6 +531,14 @@ class update_entries_after(object):
 		# Get dynamic incoming/outgoing rate
 		if not self.args.get("sle_id"):
 			self.get_dynamic_incoming_outgoing_rate(sle)
+
+		if (
+			sle.voucher_type in ["Purchase Receipt", "Purchase Invoice"]
+			and sle.voucher_detail_no
+			and sle.actual_qty < 0
+			and frappe.get_cached_value(sle.voucher_type, sle.voucher_no, "is_internal_supplier")
+		):
+			sle.outgoing_rate = get_incoming_rate_for_inter_company_transfer(sle)
 
 		if get_serial_nos(sle.serial_no):
 			self.get_serialized_values(sle)
@@ -584,6 +587,7 @@ class update_entries_after(object):
 		sle.stock_queue = json.dumps(self.wh_data.stock_queue)
 		sle.stock_value_difference = stock_value_difference
 		sle.doctype = "Stock Ledger Entry"
+
 		frappe.get_doc(sle).db_update()
 
 		if not self.args.get("sle_id"):
@@ -640,6 +644,13 @@ class update_entries_after(object):
 					voucher_detail_no=sle.voucher_detail_no,
 					sle=sle,
 				)
+
+			elif (
+				sle.voucher_type in ["Purchase Receipt", "Purchase Invoice"]
+				and sle.voucher_detail_no
+				and frappe.get_cached_value(sle.voucher_type, sle.voucher_no, "is_internal_supplier")
+			):
+				rate = get_incoming_rate_for_inter_company_transfer(sle)
 			else:
 				if sle.voucher_type in ("Purchase Receipt", "Purchase Invoice"):
 					rate_field = "valuation_rate"
@@ -714,9 +725,12 @@ class update_entries_after(object):
 
 	def update_rate_on_purchase_receipt(self, sle, outgoing_rate):
 		if frappe.db.exists(sle.voucher_type + " Item", sle.voucher_detail_no):
-			frappe.db.set_value(
-				sle.voucher_type + " Item", sle.voucher_detail_no, "base_net_rate", outgoing_rate
-			)
+			if sle.voucher_type in ["Purchase Receipt", "Purchase Invoice"] and frappe.get_cached_value(
+				sle.voucher_type, sle.voucher_no, "is_internal_supplier"
+			):
+				frappe.db.set_value(
+					f"{sle.voucher_type} Item", sle.voucher_detail_no, "valuation_rate", sle.outgoing_rate
+				)
 		else:
 			frappe.db.set_value(
 				"Purchase Receipt Item Supplied", sle.voucher_detail_no, "rate", outgoing_rate
@@ -1460,3 +1474,25 @@ def _round_off_if_near_zero(number: float, precision: int = 6) -> float:
 		return 0.0
 
 	return flt(number)
+
+
+def get_incoming_rate_for_inter_company_transfer(sle) -> float:
+	"""
+	For inter company transfer, incoming rate is the average of the outgoing rate
+	"""
+	rate = 0.0
+
+	field = "delivery_note_item" if sle.voucher_type == "Purchase Receipt" else "sales_invoice_item"
+
+	doctype = "Delivery Note Item" if sle.voucher_type == "Purchase Receipt" else "Sales Invoice Item"
+
+	reference_name = frappe.get_cached_value(sle.voucher_type + " Item", sle.voucher_detail_no, field)
+
+	if reference_name:
+		rate = frappe.get_cached_value(
+			doctype,
+			reference_name,
+			"incoming_rate",
+		)
+
+	return rate

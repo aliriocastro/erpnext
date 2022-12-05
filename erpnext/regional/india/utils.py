@@ -40,13 +40,12 @@ def validate_gstin_for_india(doc, method):
 
 	gst_category = []
 
-	if hasattr(doc, "gst_category"):
-		if len(doc.links):
-			link_doctype = doc.links[0].get("link_doctype")
-			link_name = doc.links[0].get("link_name")
+	if len(doc.links):
+		link_doctype = doc.links[0].get("link_doctype")
+		link_name = doc.links[0].get("link_name")
 
-			if link_doctype in ["Customer", "Supplier"]:
-				gst_category = frappe.db.get_value(link_doctype, {"name": link_name}, ["gst_category"])
+		if link_doctype in ["Customer", "Supplier"]:
+			gst_category = frappe.db.get_value(link_doctype, {"name": link_name}, ["gst_category"])
 
 	doc.gstin = doc.gstin.upper().strip()
 	if not doc.gstin or doc.gstin == "NA":
@@ -258,9 +257,16 @@ def get_regional_address_details(party_details, doctype, company):
 
 	update_party_details(party_details, doctype)
 
+	customer_gst_category = frappe.get_value(
+		"Customer", party_details.customer, ["gst_category", "export_type"]
+	)
+
 	party_details.place_of_supply = get_place_of_supply(party_details, doctype)
 
-	if is_internal_transfer(party_details, doctype):
+	if is_internal_transfer(party_details, doctype) or customer_gst_category == (
+		"SEZ",
+		"Without Payment of Tax",
+	):
 		party_details.taxes_and_charges = ""
 		party_details.taxes = []
 		return party_details
@@ -581,7 +587,7 @@ def get_ewb_data(dt, dn):
 
 		if dt == "Delivery Note":
 			data.subSupplyType = 1
-		elif doc.gst_category in ["Registered Regular", "SEZ"]:
+		elif doc.gst_category in ["Unregistered", "Registered Regular", "SEZ"]:
 			data.subSupplyType = 1
 		elif doc.gst_category in ["Overseas", "Deemed Export"]:
 			data.subSupplyType = 3
@@ -603,6 +609,10 @@ def get_ewb_data(dt, dn):
 		shipping_address = frappe.get_doc("Address", doc.shipping_address_name)
 
 		data = get_address_details(data, doc, company_address, billing_address, dispatch_address)
+
+		if is_intrastate_transfer_eway_bill(data):
+			data.docType = "CHL"
+			data.subSupplyType = 8
 
 		data.itemList = []
 		data.totalValue = doc.total
@@ -644,6 +654,10 @@ def get_ewb_data(dt, dn):
 	data = {"version": "1.0.0421", "billLists": ewaybills}
 
 	return data
+
+
+def is_intrastate_transfer_eway_bill(data):
+	return data.fromGstin == data.toGstin
 
 
 @frappe.whitelist()
@@ -969,8 +983,6 @@ def validate_reverse_charge_transaction(doc, method):
 
 			frappe.throw(msg)
 
-		doc.eligibility_for_itc = "ITC on Reverse Charge"
-
 
 def update_itc_availed_fields(doc, method):
 	country = frappe.get_cached_value("Company", doc.company, "country")
@@ -1061,8 +1073,16 @@ def update_taxable_values(doc, method):
 				considered_rows.append(prev_row_id)
 
 	for item in doc.get("items"):
-		proportionate_value = item.base_net_amount if doc.base_net_total else item.qty
-		total_value = doc.base_net_total if doc.base_net_total else doc.total_qty
+		if (
+			doc.apply_discount_on == "Grand Total"
+			and doc.discount_amount
+			and doc.get("is_cash_or_non_trade_discount")
+		):
+			proportionate_value = item.base_amount if doc.base_total else item.qty
+			total_value = doc.base_total if doc.base_total else doc.total_qty
+		else:
+			proportionate_value = item.base_net_amount if doc.base_net_total else item.qty
+			total_value = doc.base_net_total if doc.base_net_total else doc.total_qty
 
 		applicable_charges = flt(
 			flt(

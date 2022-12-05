@@ -128,6 +128,9 @@ def repost(doc):
 		if not frappe.db.exists("Repost Item Valuation", doc.name):
 			return
 
+		# This is to avoid TooManyWritesError in case of large reposts
+		frappe.db.MAX_WRITES_PER_TRANSACTION *= 4
+
 		doc.set_status("In Progress")
 		if not frappe.flags.in_test:
 			frappe.db.commit()
@@ -302,3 +305,9 @@ def in_configured_timeslot(repost_settings=None, current_time=None):
 		return end_time >= now_time >= start_time
 	else:
 		return now_time >= start_time or now_time <= end_time
+
+
+@frappe.whitelist()
+def execute_repost_item_valuation():
+	"""Execute repost item valuation via scheduler."""
+	frappe.get_doc("Scheduled Job Type", "repost_item_valuation.repost_entries").enqueue(force=True)

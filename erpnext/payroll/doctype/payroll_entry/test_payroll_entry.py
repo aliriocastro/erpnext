@@ -133,9 +133,17 @@ class TestPayrollEntry(FrappeTestCase):
 
 		payment_entry = frappe.db.sql(
 			"""
-			Select ifnull(sum(je.total_debit),0) as total_debit, ifnull(sum(je.total_credit),0) as total_credit from `tabJournal Entry` je, `tabJournal Entry Account` jea
-			Where je.name = jea.parent
-			And jea.reference_name = %s
+			select
+				ifnull(sum(je.total_debit),0) as total_debit,
+				ifnull(sum(je.total_credit),0) as total_credit
+			from
+				`tabJournal Entry` je,
+				`tabJournal Entry Account` jea
+			Where
+				je.name = jea.parent
+				and je.voucher_type = 'Bank Entry'
+				and jea.reference_type = 'Payroll Entry'
+				and jea.reference_name = %s
 			""",
 			(payroll_entry.name),
 			as_dict=1,
@@ -295,6 +303,7 @@ class TestPayrollEntry(FrappeTestCase):
 				loan_account="Loan Account - _TC",
 				interest_income_account="Interest Income Account - _TC",
 				penalty_income_account="Penalty Income Account - _TC",
+				repayment_schedule_type="Monthly as per repayment start date",
 			)
 
 		loan = create_loan(
@@ -330,13 +339,13 @@ class TestPayrollEntry(FrappeTestCase):
 		)
 
 		salary_slip = frappe.get_doc("Salary Slip", name)
+
 		for row in salary_slip.loans:
 			if row.loan == loan.name:
 				interest_amount = (280000 * 8.4) / (12 * 100)
 				principal_amount = loan.monthly_repayment_amount - interest_amount
 				self.assertEqual(row.interest_amount, interest_amount)
 				self.assertEqual(row.principal_amount, principal_amount)
-				self.assertEqual(row.total_payment, interest_amount + principal_amount)
 
 		if salary_slip.docstatus == 0:
 			frappe.delete_doc("Salary Slip", name)

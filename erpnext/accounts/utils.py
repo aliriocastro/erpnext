@@ -818,6 +818,28 @@ def get_held_invoices(party_type, party):
 	return held_invoices
 
 
+def remove_return_pos_invoices(party_type, party, invoice_list):
+	if invoice_list:
+
+		if party_type == "Customer":
+			sinv = frappe.qb.DocType("Sales Invoice")
+			return_pos = (
+				frappe.qb.from_(sinv)
+				.select(sinv.name)
+				.where((sinv.is_pos == 1) & (sinv.docstatus == 1) & (sinv.is_return == 1))
+				.run()
+			)
+
+			if return_pos:
+				return_pos = [x[0] for x in return_pos]
+			else:
+				return invoice_list
+
+			invoice_list = [x for x in invoice_list if x.voucher_no not in return_pos]
+
+	return invoice_list
+
+
 def get_outstanding_invoices(party_type, party, account, condition=None, filters=None):
 	outstanding_invoices = []
 	precision = frappe.get_precision("Sales Invoice", "outstanding_amount") or 2
@@ -867,6 +889,8 @@ def get_outstanding_invoices(party_type, party, account, condition=None, filters
 		},
 		as_dict=True,
 	)
+
+	invoice_list = remove_return_pos_invoices(party_type, party, invoice_list)
 
 	payment_entries = frappe.db.sql(
 		"""

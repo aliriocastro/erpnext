@@ -1038,7 +1038,7 @@ class SalesInvoice(SellingController):
 		)
 
 		if grand_total and not self.is_internal_transfer():
-			# Didnot use base_grand_total to book rounding loss gle
+			# Did not use base_grand_total to book rounding loss gle
 			gl_entries.append(
 				self.get_gl_dict(
 					{
@@ -2155,11 +2155,13 @@ def make_inter_company_transaction(doctype, source_name, target_doc=None):
 		target_detail_field = "sales_invoice_item" if doctype == "Sales Invoice" else "sales_order_item"
 		source_document_warehouse_field = "target_warehouse"
 		target_document_warehouse_field = "from_warehouse"
+		received_items = get_received_items(source_name, target_doctype, target_detail_field)
 	else:
 		source_doc = frappe.get_doc(doctype, source_name)
 		target_doctype = "Sales Invoice" if doctype == "Purchase Invoice" else "Sales Order"
 		source_document_warehouse_field = "from_warehouse"
 		target_document_warehouse_field = "target_warehouse"
+		received_items = {}
 
 	validate_inter_company_transaction(source_doc, doctype)
 	details = get_inter_company_details(source_doc, doctype)
@@ -2182,6 +2184,9 @@ def make_inter_company_transaction(doctype, source_name, target_doc=None):
 			update_address(target_doc, "supplier_address", "address_display", source_doc.company_address)
 			update_address(
 				target_doc, "shipping_address", "shipping_address_display", source_doc.customer_address
+			)
+			update_address(
+				target_doc, "billing_address", "billing_address_display", source_doc.customer_address
 			)
 
 			if currency:
@@ -2225,12 +2230,17 @@ def make_inter_company_transaction(doctype, source_name, target_doc=None):
 				shipping_address_name=target_doc.shipping_address_name,
 			)
 
+	def update_item(source, target, source_parent):
+		target.qty = flt(source.qty) - received_items.get(source.name, 0.0)
+
 	item_field_map = {
 		"doctype": target_doctype + " Item",
 		"field_no_map": ["income_account", "expense_account", "cost_center", "warehouse"],
 		"field_map": {
 			"rate": "rate",
 		},
+		"postprocess": update_item,
+		"condition": lambda doc: doc.qty > 0,
 	}
 
 	if doctype in ["Sales Invoice", "Sales Order"]:
@@ -2266,6 +2276,28 @@ def make_inter_company_transaction(doctype, source_name, target_doc=None):
 	)
 
 	return doclist
+
+
+def get_received_items(reference_name, doctype, reference_fieldname):
+	target_doctypes = frappe.get_all(
+		doctype,
+		filters={"inter_company_invoice_reference": reference_name, "docstatus": 1},
+		as_list=True,
+	)
+
+	if target_doctypes:
+		target_doctypes = list(target_doctypes[0])
+
+	received_items_map = frappe._dict(
+		frappe.get_all(
+			doctype + " Item",
+			filters={"parent": ("in", target_doctypes)},
+			fields=[reference_fieldname, "qty"],
+			as_list=1,
+		)
+	)
+
+	return received_items_map
 
 
 def set_purchase_references(doc):

@@ -19,6 +19,7 @@ from erpnext.accounts.doctype.sales_invoice.sales_invoice import (
 	update_linked_doc,
 	validate_inter_company_party,
 )
+from erpnext.accounts.party import get_party_account
 from erpnext.controllers.selling_controller import SellingController
 from erpnext.manufacturing.doctype.production_plan.production_plan import (
 	get_items_for_material_requests,
@@ -797,6 +798,8 @@ def make_sales_invoice(source_name, target_doc=None, ignore_permissions=False):
 		if source.loyalty_points and source.order_type == "Shopping Cart":
 			target.redeem_loyalty_points = 1
 
+		target.debit_to = get_party_account("Customer", source.customer, source.company)
+
 	def update_item(source, target, source_parent):
 		target.amount = flt(source.amount) - flt(source.billed_amt)
 		target.base_amount = target.amount * flt(source_parent.conversion_rate)
@@ -950,6 +953,9 @@ def get_events(start, end, filters=None):
 @frappe.whitelist()
 def make_purchase_order_for_default_supplier(source_name, selected_items=None, target_doc=None):
 	"""Creates Purchase Order for each Supplier. Returns a list of doc objects."""
+
+	from erpnext.setup.utils import get_exchange_rate
+
 	if not selected_items:
 		return
 
@@ -958,10 +964,20 @@ def make_purchase_order_for_default_supplier(source_name, selected_items=None, t
 
 	def set_missing_values(source, target):
 		target.supplier = supplier
+		target.currency = frappe.db.get_value(
+			"Supplier", filters={"name": supplier}, fieldname=["default_currency"]
+		)
+		company_currency = frappe.db.get_value(
+			"Company", filters={"name": target.company}, fieldname=["default_currency"]
+		)
+
+		target.conversion_rate = get_exchange_rate(target.currency, company_currency, args="for_buying")
+
 		target.apply_discount_on = ""
 		target.additional_discount_percentage = 0.0
 		target.discount_amount = 0.0
 		target.inter_company_order_reference = ""
+		target.shipping_rule = ""
 
 		default_price_list = frappe.get_value("Supplier", supplier, "default_price_list")
 		if default_price_list:
@@ -1080,6 +1096,7 @@ def make_purchase_order(source_name, selected_items=None, target_doc=None):
 		target.additional_discount_percentage = 0.0
 		target.discount_amount = 0.0
 		target.inter_company_order_reference = ""
+		target.shipping_rule = ""
 		target.customer = ""
 		target.customer_name = ""
 		target.run_method("set_missing_values")
