@@ -54,7 +54,9 @@
   "stock_frozen_upto_days",
   "column_break_26",
   "role_allowed_to_create_edit_back_dated_transactions",
-  "stock_auth_role"
+  "stock_auth_role",
+  "allow_expired_batches",
+  "disable_item_price_duplicates_validation"
  ],
  "fields": [
   {
@@ -249,6 +251,13 @@
    "label": "Disable Serial No And Batch Selector"
   },
   {
+   "default": "0",
+   "description": "Allows to fetch expired batches on transactions",
+   "fieldname": "allow_expired_batches",
+   "fieldtype": "Check",
+   "label": "Allow Transactions with Expired Batches"
+  },
+  {
    "description": "Users with this role are allowed to over deliver/receive against orders above the allowance percentage",
    "fieldname": "role_allowed_to_over_deliver_receive",
    "fieldtype": "Link",
@@ -278,6 +287,12 @@
    "fieldtype": "Column Break"
   },
   {
+   "default": "0",
+   "fieldname": "disable_item_price_duplicates_validation",
+   "fieldtype": "Check",
+   "label": "Disable Item Price Duplicates Vaidation"
+   },
+   {
    "fieldname": "quality_inspection_settings_section",
    "fieldtype": "Section Break",
    "label": "Quality Inspection Settings"

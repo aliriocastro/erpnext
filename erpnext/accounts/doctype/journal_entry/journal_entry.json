@@ -268,7 +268,7 @@
   },
   {
    "fieldname": "total_amount_in_words",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "hidden": 1,
    "label": "Total Amount in Words",
    "no_copy": 1,

@@ -152,16 +152,19 @@ class StockLedgerEntry(Document):
 			self.posting_time = "00:00"
 
 	def validate_batch(self):
-		if self.batch_no and self.voucher_type != "Stock Entry":
-			if (self.voucher_type in ["Purchase Receipt", "Purchase Invoice"] and self.actual_qty < 0) or (
-				self.voucher_type in ["Delivery Note", "Sales Invoice"] and self.actual_qty > 0
-			):
-				return
+		allow_expired_batches = frappe.db.get_value('Stock Settings', None, 'allow_expired_batches')
 
-			expiry_date = frappe.db.get_value("Batch", self.batch_no, "expiry_date")
-			if expiry_date:
-				if getdate(self.posting_date) > getdate(expiry_date):
-					frappe.throw(_("Batch {0} of Item {1} has expired.").format(self.batch_no, self.item_code))
+		if not allow_expired_batches:
+			if self.batch_no and self.voucher_type != "Stock Entry":
+				if (self.voucher_type in ["Purchase Receipt", "Purchase Invoice"] and self.actual_qty < 0) or (
+					self.voucher_type in ["Delivery Note", "Sales Invoice"] and self.actual_qty > 0
+				):
+					return
+
+				expiry_date = frappe.db.get_value("Batch", self.batch_no, "expiry_date")
+				if expiry_date:
+					if getdate(self.posting_date) > getdate(expiry_date):
+						frappe.throw(_("Batch {0} of Item {1} has expired.").format(self.batch_no, self.item_code))
 
 	def validate_and_set_fiscal_year(self):
 		if not self.fiscal_year:

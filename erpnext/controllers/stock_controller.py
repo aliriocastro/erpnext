@@ -107,7 +107,9 @@ class StockController(AccountsController):
 			if flt(d.qty) > 0.0 and d.get("batch_no") and self.get("posting_date") and self.docstatus < 2:
 				expiry_date = frappe.get_cached_value("Batch", d.get("batch_no"), "expiry_date")
 
-				if expiry_date and getdate(expiry_date) < getdate(self.posting_date):
+				allow_expired_batches = frappe.db.get_value('Stock Settings', None, 'allow_expired_batches')
+
+				if not allow_expired_batches and expiry_date and getdate(expiry_date) < getdate(self.posting_date):
 					frappe.throw(
 						_("Row #{0}: The batch {1} has already expired.").format(
 							d.idx, get_link_to_form("Batch", d.get("batch_no"))

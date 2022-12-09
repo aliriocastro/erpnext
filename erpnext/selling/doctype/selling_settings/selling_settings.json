@@ -28,7 +28,9 @@
   "allow_multiple_items",
   "allow_against_multiple_purchase_orders",
   "hide_tax_id",
-  "enable_discount_accounting"
+  "enable_discount_accounting",
+  "validate_selling_price",
+  "force_use_customers_currency_in_sales"
  ],
  "fields": [
   {
@@ -136,6 +138,23 @@
    "fieldtype": "Link",
    "label": "Role Allowed to Override Stop Action",
    "options": "Role"
+  },
+  {
+   "default": "0",
+   "description": "Forces using customer's default currency in sales transaction such as Quotation, Sales Order and Sales Invoice",
+   "fieldname": "force_use_customers_currency_in_sales",
+   "fieldtype": "Check",
+   "label": "Force to use Customer's Currency in Sales Transactions"
+  },
+   {
+   "fieldname": "column_break_15",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "editable_bundle_item_rates",
+   "fieldtype": "Check",
+   "label": "Calculate Product Bundle Price based on Child Items' Rates"
   },
   {
    "fieldname": "customer_defaults_section",

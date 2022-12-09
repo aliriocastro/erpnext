@@ -404,7 +404,9 @@ def get_delivery_notes_to_be_billed(doctype, txt, searchfield, start, page_len, 
 def get_batch_no(doctype, txt, searchfield, start, page_len, filters):
 	doctype = "Batch"
 	cond = ""
-	if filters.get("posting_date"):
+
+	allow_expired_batches = frappe.db.get_value('Stock Settings', None, 'allow_expired_batches')
+	if filters.get("posting_date") and not allow_expired_batches:
 		cond = "and (batch.expiry_date is null or batch.expiry_date >= %(posting_date)s)"
 
 	batch_nos = None
@@ -437,10 +439,8 @@ def get_batch_no(doctype, txt, searchfield, start, page_len, filters):
 			search_columns = ", " + ", ".join(searchfields)
 			search_cond = " or " + " or ".join([field + " like %(txt)s" for field in searchfields])
 
-		batch_nos = frappe.db.sql(
-			"""select sle.batch_no, round(sum(sle.actual_qty),2), sle.stock_uom,
-				concat('MFG-',batch.manufacturing_date), concat('EXP-',batch.expiry_date)
-				{search_columns}
+		batch_nos = frappe.db.sql("""select sle.batch_no, round(sum(sle.actual_qty),2), sle.stock_uom,
+				concat('Fabricación ->',batch.manufacturing_date), concat('Expiración ->',batch.expiry_date)
 			from `tabStock Ledger Entry` sle
 				INNER JOIN `tabBatch` batch on sle.batch_no = batch.name
 			where

@@ -9,6 +9,7 @@ from frappe.query_builder import Criterion
 from frappe.query_builder.functions import Cast_
 from frappe.utils import getdate
 
+from timeit import default_timer as timer
 
 class ItemPriceDuplicateItem(frappe.ValidationError):
 	pass
@@ -20,7 +21,13 @@ class ItemPrice(Document):
 		self.validate_dates()
 		self.update_price_list_details()
 		self.update_item_details()
-		self.check_duplicates()
+
+
+		disable_duplicates_validation = frappe.db.get_single_value("Stock Settings", "disable_item_price_duplicates_validation")
+		if not disable_duplicates_validation:
+			self.check_duplicates()
+
+		#self.check_duplicates_in_memory()
 
 	def validate_item(self):
 		if not frappe.db.exists("Item", self.item_code):
@@ -101,13 +108,60 @@ class ItemPrice(Document):
 
 		price_list_rate = query.run(as_dict=True)
 
-		if price_list_rate:
-			frappe.throw(
-				_(
-					"Item Price appears multiple times based on Price List, Supplier/Customer, Currency, Item, Batch, UOM, Qty, and Dates."
-				),
-				ItemPriceDuplicateItem,
-			)
+		if price_list_rate :
+			frappe.throw(_("Item Price appears multiple times based on Price List, Supplier/Customer, Currency, Item, UOM, Qty and Dates."), ItemPriceDuplicateItem)
+
+	def check_duplicates_in_memory(self):
+		def _item_prices_data_generator(price_list):
+			item_prices = frappe.db.sql("""SELECT item_code, price_list, name, uom, valid_from, valid_upto, packing_unit, customer, supplier
+						FROM `tabItem Price`
+						WHERE price_list=%(price_list)s""", {"price_list": price_list}, as_dict=1)
+
+			return item_prices
+
+		def log_execution_time(st, et):
+			frappe.log_error(f"Execution time: {((et-st)*1000)}ms ", "Item Price Execution Time")
+
+		start_time = timer()
+
+		cache_key =  f"item_prices.{frappe.scrub(self.price_list)}"
+		#cache_key =  f"item_prices"
+		data = frappe.cache().get_value(cache_key)
+
+		time_cache_get_value = timer()
+
+		if data is None:
+			frappe.log_error(f"NOT Found {cache_key} in cache.", "Item Price: NOT FOUND")
+			data = _item_prices_data_generator(self.price_list)
+			#frappe.cache().set_value(cache_key, data, expires_in_sec=15)
+			frappe.cache().set_value(cache_key, data)
+
+		time_cache_gen_data = timer()
+
+		data = list(filter(lambda x: x.get("item_code") == self.item_code and x.get("name") != self.name, data))
+
+		time_first_filtration = timer()
+
+		for field in ['uom', 'valid_from',
+					'valid_upto', 'packing_unit', 'customer', 'supplier']:
+			if self.get(field):
+				data = list(filter(lambda x: x.get(field) == self.get(field), data))
+
+		time_sec_filtration = timer()
+
+		if len(data) > 0:
+			log_execution_time(start_time, timer())
+			frappe.log_error(frappe.as_json(data), "Item Price appears multiple times")
+			frappe.throw(_("Item Price appears multiple times based on Price List, Supplier/Customer, Currency, Item, UOM, Qty and Dates."), ItemPriceDuplicateItem)
+
+		# frappe.log_error(frappe.as_json({
+		# 	"total": (timer() - start_time)*1000,
+		# 	"gen_data": (time_cache_gen_data - time_cache_get_value)*1000,
+		# 	"cache_get_value": (time_cache_get_value - start_time)*1000,
+		# 	"first_filtration": (time_first_filtration - time_cache_gen_data)*1000,
+		# 	"sec_filtration": (timer() - time_sec_filtration)*1000
+		# }), "Item Price Profiling")
+
 
 	def before_save(self):
 		if self.selling:

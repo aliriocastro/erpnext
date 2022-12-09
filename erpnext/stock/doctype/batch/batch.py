@@ -327,6 +327,9 @@ def get_batches(item_code, warehouse, qty=1, throw=False, serial_no=None):
 
 		cond = " and `tabBatch`.name = %s" % (frappe.db.escape(batch[0].batch_no))
 
+	if not frappe.db.get_value('Stock Settings', None, 'allow_expired_batches'):
+		cond += " and (`tabBatch`.expiry_date >= CURDATE() or `tabBatch`.expiry_date IS NULL)"
+
 	return frappe.db.sql(
 		"""
 		select batch_id, sum(`tabStock Ledger Entry`.actual_qty) as qty

@@ -40,7 +40,7 @@ class BankClearance(Document):
 				and t1.posting_date >= %(from)s and t1.posting_date <= %(to)s
 				and ifnull(t1.is_opening, 'No') = 'No' {condition}
 			group by t2.account, t1.name
-			order by t1.posting_date ASC, t1.name DESC
+			order by t1.posting_date ASC, t1.cheque_no ASC
 		""".format(
 				condition=condition
 			),
@@ -66,7 +66,7 @@ class BankClearance(Document):
 				and posting_date >= %(from)s and posting_date <= %(to)s
 				{condition}
 			order by
-				posting_date ASC, name DESC
+				posting_date ASC, reference_date DESC
 		""".format(
 				condition=condition
 			),
