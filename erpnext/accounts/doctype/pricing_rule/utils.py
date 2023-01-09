@@ -244,6 +244,22 @@ def get_other_conditions(conditions, values, args):
 			and ifnull(`tabPricing Rule`.valid_upto, '2500-12-31')"""
 		values["transaction_date"] = args.get("transaction_date")
 
+	if args.get("doctype") in [
+		"Quotation",
+		"Quotation Item",
+		"Sales Order",
+		"Sales Order Item",
+		"Delivery Note",
+		"Delivery Note Item",
+		"Sales Invoice",
+		"Sales Invoice Item",
+		"POS Invoice",
+		"POS Invoice Item",
+	]:
+		conditions += """ and ifnull(`tabPricing Rule`.selling, 0) = 1"""
+	else:
+		conditions += """ and ifnull(`tabPricing Rule`.buying, 0) = 1"""
+
 	return conditions
 
 
@@ -663,7 +679,7 @@ def get_product_discount_rule(pricing_rule, item_details, args=None, doc=None):
 	item_details.free_item_data.append(free_item_data_args)
 
 
-def apply_pricing_rule_for_free_items(doc, pricing_rule_args, set_missing_values=False):
+def apply_pricing_rule_for_free_items(doc, pricing_rule_args):
 	if pricing_rule_args:
 		items = tuple((d.item_code, d.pricing_rules) for d in doc.items if d.is_free_item)
 

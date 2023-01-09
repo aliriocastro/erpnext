@@ -197,7 +197,7 @@ class AccountsController(TransactionBase):
 
 		validate_einvoice_fields(self)
 
-		if self.doctype != "Material Request":
+		if self.doctype != "Material Request" and not self.ignore_pricing_rule:
 			apply_pricing_rule_on_transaction(self)
 
 	def before_cancel(self):
@@ -584,7 +584,12 @@ class AccountsController(TransactionBase):
 					if bool(uom) != bool(stock_uom):  # xor
 						item.stock_uom = item.uom = uom or stock_uom
 
-					item.conversion_factor = get_uom_conv_factor(item.get("uom"), item.get("stock_uom"))
+					# UOM cannot be zero so substitute as 1
+					item.conversion_factor = (
+						get_uom_conv_factor(item.get("uom"), item.get("stock_uom"))
+						or item.get("conversion_factor")
+						or 1
+					)
 
 			if self.doctype == "Purchase Invoice":
 				self.set_expense_account(for_validate)
