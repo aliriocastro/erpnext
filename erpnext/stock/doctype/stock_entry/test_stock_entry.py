@@ -5,7 +5,7 @@
 import frappe
 from frappe.permissions import add_user_permission, remove_user_permission
 from frappe.tests.utils import FrappeTestCase, change_settings
-from frappe.utils import add_days, flt, nowdate, nowtime, today
+from frappe.utils import add_days, flt, now, nowdate, nowtime, today
 from six import iteritems
 
 from erpnext.accounts.doctype.account.test_account import get_inventory_account
