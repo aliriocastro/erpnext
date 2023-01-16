@@ -446,6 +446,8 @@ def validate_party_gle_currency(party_type, party, company, party_account_curren
 
 	existing_gle_currency = get_party_gle_currency(party_type, party, company)
 
+	return # we don't want to validate the currency.
+
 	if existing_gle_currency and party_account_currency != existing_gle_currency:
 		frappe.throw(
 			_(
