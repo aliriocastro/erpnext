@@ -520,8 +520,7 @@ def calculate_exchange_rate_using_last_gle(company, account, party_type, party):
 		)
 
 		if last_exchange_rate == None:
-			frappe.logger().error(f"calculate_exchange_rate_using_last_gle(): company={company}, account={account}, party_type={party_type}, party={party}, voucher_type={voucher_type}, voucher_no={voucher_no}")
-			frappe.logger().error(f"calculate_exchange_rate_using_last_gle(): sql={last_exchange_rate_query}")
+			frappe.throw(f"calculate_exchange_rate_using_last_gle(): company={company}, account={account}, party_type={party_type}, party={party}, voucher_type={voucher_type}, voucher_no={voucher_no}, sql={last_exchange_rate_query}")
 
 	return last_exchange_rate
 
