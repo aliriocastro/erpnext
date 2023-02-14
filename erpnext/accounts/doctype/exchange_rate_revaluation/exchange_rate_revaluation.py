@@ -210,9 +210,6 @@ class ExchangeRateRevaluation(Document):
 
 			# Handle Accounts with '0' balance in Account/Base Currency
 			for d in [x for x in account_details if x.zero_balance]:
-				if d.balance == 0:
-					continue
-
 				# TODO: Set new balance in Base/Account currency
 				if d.balance > 0:
 					current_exchange_rate = new_exchange_rate = 0
@@ -220,19 +217,18 @@ class ExchangeRateRevaluation(Document):
 					new_balance_in_account_currency = 0  # this will be '0'
 					new_balance_in_base_currency = 0  # this will be '0'
 					gain_loss = flt(new_balance_in_base_currency, precision) - flt(d.balance, precision)
-				else:
-					# from this line has no meaning
-					new_exchange_rate = 0
-					new_balance_in_base_currency = 0
-					new_balance_in_account_currency = 0
+				# else:
+				# 	new_exchange_rate = 0
+				# 	new_balance_in_base_currency = 0
+				# 	new_balance_in_account_currency = 0
 
-					current_exchange_rate = calculate_exchange_rate_using_last_gle(
-						company, d.account, d.party_type, d.party
-					)
+				# 	current_exchange_rate = calculate_exchange_rate_using_last_gle(
+				# 		company, d.account, d.party_type, d.party
+				# 	)
 
-					gain_loss = new_balance_in_account_currency - (
-						current_exchange_rate * d.balance_in_account_currency
-					)
+				# 	gain_loss = new_balance_in_account_currency - (
+				# 		current_exchange_rate * d.balance_in_account_currency
+				# 	)
 
 				if gain_loss:
 					accounts.append(
