@@ -660,7 +660,7 @@ class JournalEntry(AccountsController):
 
 	def validate_total_debit_and_credit(self):
 		self.set_total_debit_credit()
-		if not ((self.voucher_type == "Exchange Gain Or Loss" or self.voucher_type == "Exchange Rate Revaluation") and self.multi_currency):
+		if not ((self.voucher_type == "Exchange Gain Or Loss" or self.voucher_type == "Exchange Rate Revaluation")) and self.multi_currency):
 			if self.difference:
 				frappe.throw(
 					_("Total Debit must be equal to Total Credit. The difference is {0}").format(self.difference)
