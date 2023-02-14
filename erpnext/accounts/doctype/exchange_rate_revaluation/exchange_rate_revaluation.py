@@ -217,7 +217,8 @@ class ExchangeRateRevaluation(Document):
 					new_balance_in_account_currency = 0  # this will be '0'
 					new_balance_in_base_currency = 0  # this will be '0'
 					gain_loss = flt(new_balance_in_base_currency, precision) - flt(d.balance, precision)
-				# else:
+				else:
+					continue
 				# 	new_exchange_rate = 0
 				# 	new_balance_in_base_currency = 0
 				# 	new_balance_in_account_currency = 0
