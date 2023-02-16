@@ -653,7 +653,7 @@ class JournalEntry(AccountsController):
 					d.against_account = ", ".join(list(set(accounts_debited)))
 
 	def validate_debit_credit_amount(self):
-		if not (self.voucher_type == "Exchange Gain Or Loss" and self.multi_currency):
+		if not ((self.voucher_type == "Exchange Gain Or Loss" or self.voucher_type == "Exchange Rate Revaluation") and self.multi_currency):
 			for d in self.get("accounts"):
 				if not flt(d.debit) and not flt(d.credit):
 					frappe.throw(_("Row {0}: Both Debit and Credit values cannot be zero").format(d.idx))
