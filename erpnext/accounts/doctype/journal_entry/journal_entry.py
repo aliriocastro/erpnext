@@ -702,7 +702,7 @@ class JournalEntry(AccountsController):
 		self.set_exchange_rate()
 
 	def set_amounts_in_company_currency(self):
-		if not (self.voucher_type == "Exchange Gain Or Loss" and self.multi_currency):
+		if not ((self.voucher_type == "Exchange Gain Or Loss" or self.voucher_type == "Exchange Rate Revaluation") and self.multi_currency):
 			for d in self.get("accounts"):
 				d.debit_in_account_currency = flt(
 					d.debit_in_account_currency, d.precision("debit_in_account_currency")
