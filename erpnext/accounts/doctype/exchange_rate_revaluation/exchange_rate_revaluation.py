@@ -385,17 +385,66 @@ class ExchangeRateRevaluation(Document):
 
 		journal_entry_accounts = []
 		for d in accounts:
-			dr_or_cr = (
+			dr_or_cr_in_acc_cur = (
 				"debit_in_account_currency"
 				if d.get("balance_in_account_currency") > 0
 				else "credit_in_account_currency"
 			)
 
-			reverse_dr_or_cr = (
+			reverse_dr_or_cr_in_acc_cur = (
 				"debit_in_account_currency"
-				if dr_or_cr == "credit_in_account_currency"
+				if dr_or_cr_in_acc_cur == "credit_in_account_currency"
 				else "credit_in_account_currency"
 			)
+
+			dr_or_cr = (
+				"debit"
+				if d.get("balance") > 0
+				else "credit"
+			)
+
+			reverse_dr_or_cr = (
+				"debit"
+				if dr_or_cr == "credit"
+				else "credit"
+			)
+
+			# journal_entry_accounts.append(
+			# 	{
+			# 		"account": d.get("account"),
+			# 		"party_type": d.get("party_type"),
+			# 		"party": d.get("party"),
+			# 		"account_currency": d.get("account_currency"),
+			# 		"balance": flt(
+			# 			d.get("balance_in_account_currency"), d.precision("balance_in_account_currency")
+			# 		),
+			# 		dr_or_cr: flt(
+			# 			abs(d.get("balance_in_account_currency")), d.precision("balance_in_account_currency")
+			# 		),
+			# 		"cost_center": erpnext.get_default_cost_center(self.company),
+			# 		"exchange_rate": flt(d.get("new_exchange_rate"), d.precision("new_exchange_rate")),
+			# 		"reference_type": "Exchange Rate Revaluation",
+			# 		"reference_name": self.name,
+			# 	}
+			# )
+			# journal_entry_accounts.append(
+			# 	{
+			# 		"account": d.get("account"),
+			# 		"party_type": d.get("party_type"),
+			# 		"party": d.get("party"),
+			# 		"account_currency": d.get("account_currency"),
+			# 		"balance": flt(
+			# 			d.get("balance_in_account_currency"), d.precision("balance_in_account_currency")
+			# 		),
+			# 		reverse_dr_or_cr: flt(
+			# 			abs(d.get("balance_in_account_currency")), d.precision("balance_in_account_currency")
+			# 		),
+			# 		"cost_center": erpnext.get_default_cost_center(self.company),
+			# 		"exchange_rate": flt(d.get("current_exchange_rate"), d.precision("current_exchange_rate")),
+			# 		"reference_type": "Exchange Rate Revaluation",
+			# 		"reference_name": self.name,
+			# 	}
+			# )
 
 			journal_entry_accounts.append(
 				{
@@ -406,8 +455,11 @@ class ExchangeRateRevaluation(Document):
 					"balance": flt(
 						d.get("balance_in_account_currency"), d.precision("balance_in_account_currency")
 					),
-					dr_or_cr: flt(
+					dr_or_cr_in_acc_cur: flt(
 						abs(d.get("balance_in_account_currency")), d.precision("balance_in_account_currency")
+					),
+					dr_or_cr: flt(
+						abs(d.get("balance")), d.precision("balance")
 					),
 					"cost_center": erpnext.get_default_cost_center(self.company),
 					"exchange_rate": flt(d.get("new_exchange_rate"), d.precision("new_exchange_rate")),
@@ -424,8 +476,11 @@ class ExchangeRateRevaluation(Document):
 					"balance": flt(
 						d.get("balance_in_account_currency"), d.precision("balance_in_account_currency")
 					),
-					reverse_dr_or_cr: flt(
+					reverse_dr_or_cr_in_acc_cur: flt(
 						abs(d.get("balance_in_account_currency")), d.precision("balance_in_account_currency")
+					),
+					reverse_dr_or_cr: flt(
+						abs(d.get("balance")), d.precision("balance")
 					),
 					"cost_center": erpnext.get_default_cost_center(self.company),
 					"exchange_rate": flt(d.get("current_exchange_rate"), d.precision("current_exchange_rate")),
