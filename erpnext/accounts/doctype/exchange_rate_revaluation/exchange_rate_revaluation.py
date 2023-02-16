@@ -493,10 +493,10 @@ class ExchangeRateRevaluation(Document):
 			{
 				"account": unrealized_exchange_gain_loss_account,
 				"balance": get_balance_on(unrealized_exchange_gain_loss_account),
-				"debit_in_account_currency": abs(self.gain_loss_unbooked)
-				if self.gain_loss_unbooked < 0
-				else 0,
+				"debit_in_account_currency": abs(self.gain_loss_unbooked) if self.gain_loss_unbooked < 0 else 0,
+				"debit": abs(self.gain_loss_unbooked) if self.gain_loss_unbooked < 0 else 0,
 				"credit_in_account_currency": self.gain_loss_unbooked if self.gain_loss_unbooked > 0 else 0,
+				"credit": self.gain_loss_unbooked if self.gain_loss_unbooked > 0 else 0,
 				"cost_center": erpnext.get_default_cost_center(self.company),
 				"exchange_rate": 1,
 				"reference_type": "Exchange Rate Revaluation",
