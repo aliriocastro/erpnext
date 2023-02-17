@@ -385,29 +385,21 @@ class ExchangeRateRevaluation(Document):
 
 		journal_entry_accounts = []
 		for d in accounts:
-			dr_or_cr_in_acc_cur = (
+			current_dr_or_cr_in_acc_cur = (
 				"debit_in_account_currency"
-				if d.get("balance_in_account_currency") > 0
+				if d.get("balance_in_account_currency") < 0
 				else "credit_in_account_currency"
 			)
 
-			reverse_dr_or_cr_in_acc_cur = (
+			new_dr_or_cr_in_acc_cur = (
 				"debit_in_account_currency"
-				if dr_or_cr_in_acc_cur == "credit_in_account_currency"
+				if current_dr_or_cr_in_acc_cur == "credit_in_account_currency"
 				else "credit_in_account_currency"
 			)
 
-			dr_or_cr = (
-				"debit"
-				if d.get("balance_in_base_currency") > 0
-				else "credit"
-			)
+			current_dr_or_cr = ("debit" if d.get("balance_in_base_currency") < 0 else "credit")
 
-			reverse_dr_or_cr = (
-				"debit"
-				if dr_or_cr == "credit"
-				else "credit"
-			)
+			new_dr_or_cr = ("debit" if current_dr_or_cr == "credit" else "credit")
 
 			# journal_entry_accounts.append(
 			# 	{
@@ -455,10 +447,10 @@ class ExchangeRateRevaluation(Document):
 					"balance": flt(
 						d.get("balance_in_account_currency"), d.precision("balance_in_account_currency")
 					),
-					dr_or_cr_in_acc_cur: flt(
+					current_dr_or_cr_in_acc_cur: flt(
 						abs(d.get("balance_in_account_currency")), d.precision("balance_in_account_currency")
 					),
-					dr_or_cr: flt(
+					current_dr_or_cr: flt(
 						abs(d.get("new_balance_in_base_currency")), d.precision("new_balance_in_base_currency")
 					),
 					"cost_center": erpnext.get_default_cost_center(self.company),
@@ -476,10 +468,10 @@ class ExchangeRateRevaluation(Document):
 					"balance": flt(
 						d.get("balance_in_account_currency"), d.precision("balance_in_account_currency")
 					),
-					reverse_dr_or_cr_in_acc_cur: flt(
+					new_dr_or_cr_in_acc_cur: flt(
 						abs(d.get("balance_in_account_currency")), d.precision("balance_in_account_currency")
 					),
-					reverse_dr_or_cr: flt(
+					new_dr_or_cr: flt(
 						abs(d.get("balance_in_base_currency")), d.precision("balance_in_base_currency")
 					),
 					"cost_center": erpnext.get_default_cost_center(self.company),
