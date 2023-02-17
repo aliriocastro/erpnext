@@ -399,7 +399,7 @@ class ExchangeRateRevaluation(Document):
 
 			current_dr_or_cr = ("debit" if d.get("balance_in_base_currency") < 0 else "credit")
 
-			new_dr_or_cr = ("debit" if current_dr_or_cr == "credit" else "credit")
+			new_dr_or_cr = ("debit" if d.get("balance_in_base_currency") > 0 else "credit")
 
 			# journal_entry_accounts.append(
 			# 	{
