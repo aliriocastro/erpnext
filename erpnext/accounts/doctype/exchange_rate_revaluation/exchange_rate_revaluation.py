@@ -451,7 +451,7 @@ class ExchangeRateRevaluation(Document):
 						abs(d.get("balance_in_account_currency")), d.precision("balance_in_account_currency")
 					),
 					current_dr_or_cr: flt(
-						abs(d.get("new_balance_in_base_currency")), d.precision("new_balance_in_base_currency")
+						abs(d.get("balance_in_base_currency")), d.precision("balance_in_base_currency")
 					),
 					"cost_center": erpnext.get_default_cost_center(self.company),
 					"exchange_rate": flt(d.get("new_exchange_rate"), d.precision("new_exchange_rate")),
@@ -472,7 +472,7 @@ class ExchangeRateRevaluation(Document):
 						abs(d.get("balance_in_account_currency")), d.precision("balance_in_account_currency")
 					),
 					new_dr_or_cr: flt(
-						abs(d.get("balance_in_base_currency")), d.precision("balance_in_base_currency")
+						abs(d.get("new_balance_in_base_currency")), d.precision("new_balance_in_base_currency")
 					),
 					"cost_center": erpnext.get_default_cost_center(self.company),
 					"exchange_rate": flt(d.get("current_exchange_rate"), d.precision("current_exchange_rate")),
