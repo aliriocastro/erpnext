@@ -787,7 +787,8 @@ class PaymentEntry(AccountsController):
 	def make_gl_entries(self, cancel=0, adv_adj=0):
 		gl_entries = self.build_gl_map()
 		gl_entries = process_gl_map(gl_entries)
-		make_gl_entries(gl_entries, cancel=cancel, adv_adj=adv_adj)
+		# We batter implement a field to check if merge entries
+		make_gl_entries(gl_entries, cancel=cancel, adv_adj=adv_adj, merge_entries=False)
 
 	def add_party_gl_entries(self, gl_entries):
 		if self.party_account:
