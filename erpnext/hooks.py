@@ -386,6 +386,7 @@ scheduler_events = {
 	"all": [
 		"erpnext.projects.doctype.project.project.project_status_update_reminder",
 		"erpnext.crm.doctype.social_media_post.social_media_post.process_scheduled_social_media_posts",
+		"erpnext.stock.doctype.repost_item_valuation.repost_item_valuation.repost_entries",
 	],
 	"hourly": [
 		"erpnext.erpnext_integrations.doctype.plaid_settings.plaid_settings.automatic_synchronization",
