@@ -396,13 +396,18 @@ class StockController(AccountsController):
 				"Serial No", {"batch_no": d.batch_no, "status": "Inactive"}, "batch_no", None
 			)
 
-			d.batch_no = None
-			d.db_set("batch_no", None)
+			#d.batch_no = None
+			#d.db_set("batch_no", None)
 
 		for data in frappe.get_all(
 			"Batch", {"reference_name": self.name, "reference_doctype": self.doctype}
 		):
 			frappe.delete_doc("Batch", data.name)
+			item_with_auto_created_batch = filter(lambda x: x.batch_no, self.items)
+
+			if item_with_auto_created_batch:
+				item_with_auto_created_batch.batch_no = None
+				item_with_auto_created_batch.db_set("batch_no", None)
 
 	def get_sl_entries(self, d, args):
 		sl_dict = frappe._dict(
