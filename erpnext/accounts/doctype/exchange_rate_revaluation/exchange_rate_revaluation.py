@@ -389,7 +389,7 @@ class ExchangeRateRevaluation(Document):
 			if not flt(d.get("balance_in_account_currency"), d.precision("balance_in_account_currency")):
 				continue
 
-			dr_or_cr = (
+			current_dr_or_cr_in_acc_cur = (
 				"debit_in_account_currency"
 				if d.get("balance_in_account_currency") < 0
 				else "credit_in_account_currency"
