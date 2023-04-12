@@ -51,7 +51,7 @@ class JournalEntry(AccountsController):
 		self.validate_multi_currency()
 		self.set_amounts_in_company_currency()
 		self.validate_debit_credit_amount()
-
+		self.set_total_debit_credit()
 		# Do not validate while importing via data import
 		if not frappe.flags.in_import:
 			self.validate_total_debit_and_credit()
