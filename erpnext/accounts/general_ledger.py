@@ -25,7 +25,7 @@ def make_gl_entries(
 	gl_map,
 	cancel=False,
 	adv_adj=False,
-	merge_entries=True,
+	merge_entries=False,
 	update_outstanding="Yes",
 	from_repost=False,
 ):
