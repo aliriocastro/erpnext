@@ -866,6 +866,8 @@ def is_reposting_pending():
 
 def future_sle_exists(args, sl_entries=None):
 	key = (args.voucher_type, args.voucher_no)
+	if not hasattr(frappe.local, "future_sle"):
+		frappe.local.future_sle = {}
 
 	if validate_future_sle_not_exists(args, key, sl_entries):
 		return False
@@ -899,6 +901,9 @@ def future_sle_exists(args, sl_entries=None):
 	)
 
 	for d in data:
+		if key not in frappe.local.future_sle:
+			frappe.local.future_sle[key] = frappe._dict({})
+
 		frappe.local.future_sle[key][(d.item_code, d.warehouse)] = d.total_row
 
 	return len(data)
@@ -910,6 +915,9 @@ def validate_future_sle_not_exists(args, key, sl_entries=None):
 		item_key = (args.get("item_code"), args.get("warehouse"))
 
 	if not sl_entries and hasattr(frappe.local, "future_sle"):
+		if key not in frappe.local.future_sle:
+			return False
+
 		if not frappe.local.future_sle.get(key) or (
 			item_key and item_key not in frappe.local.future_sle.get(key)
 		):
@@ -917,11 +925,8 @@ def validate_future_sle_not_exists(args, key, sl_entries=None):
 
 
 def get_cached_data(args, key):
-	if not hasattr(frappe.local, "future_sle"):
-		frappe.local.future_sle = {}
-
 	if key not in frappe.local.future_sle:
-		frappe.local.future_sle[key] = frappe._dict({})
+		return False
 
 	if args.get("item_code"):
 		item_key = (args.get("item_code"), args.get("warehouse"))
