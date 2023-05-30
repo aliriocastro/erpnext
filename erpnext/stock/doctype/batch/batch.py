@@ -325,7 +325,7 @@ def get_batches(item_code, warehouse, qty=1, throw=False, serial_no=None):
 			(sle.item_code == item_code)
 			& (sle.warehouse == warehouse)
 			& (sle.is_cancelled == 0)
-			& (allow_expired_batches or (batch.expiry_date >= CurDate()) | (batch.expiry_date.isnull()))
+			# & (allow_expired_batches or (batch.expiry_date >= CurDate()) | (batch.expiry_date.isnull()))
 		)
 		.groupby(batch.batch_id)
 		.orderby(batch.expiry_date, batch.creation)
