@@ -347,7 +347,7 @@ def get_batches(item_code, warehouse, qty=1, throw=False, serial_no=None):
 
 		query = query.where(batch.name == batches[0].batch_no)
 
-		return query.run(as_dict=True)
+	return query.run(as_dict=True)
 
 
 def validate_serial_no_with_batch(serial_nos, item_code):
