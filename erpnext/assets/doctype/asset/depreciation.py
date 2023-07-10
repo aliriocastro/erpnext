@@ -4,7 +4,16 @@
 
 import frappe
 from frappe import _
-from frappe.utils import add_months, cint, flt, get_last_day, getdate, nowdate, today
+from frappe.utils import (
+	add_months,
+	cint,
+	flt,
+	get_first_day,
+	get_last_day,
+	getdate,
+	nowdate,
+	today,
+)
 from frappe.utils.data import get_link_to_form
 from frappe.utils.user import get_users_with_role
 
@@ -128,15 +137,15 @@ def make_depreciation_entry(asset_name, date=None):
 			je.flags.ignore_permissions = True
 			je.flags.planned_depr_entry = True
 			je.save()
-			if not je.meta.get_workflow():
-				je.submit()
 
 			d.db_set("journal_entry", je.name)
 
-			idx = cint(d.finance_book_id)
-			finance_books = asset.get("finance_books")[idx - 1]
-			finance_books.value_after_depreciation -= d.depreciation_amount
-			finance_books.db_update()
+			if not je.meta.get_workflow():
+				je.submit()
+				idx = cint(d.finance_book_id)
+				finance_books = asset.get("finance_books")[idx - 1]
+				finance_books.value_after_depreciation -= d.depreciation_amount
+				finance_books.db_update()
 
 	asset.db_set("depr_entry_posting_status", "Successful")
 
@@ -334,6 +343,9 @@ def modify_depreciation_schedule_for_asset_repairs(asset):
 
 
 def reverse_depreciation_entry_made_after_disposal(asset, date):
+	if not asset.calculate_depreciation:
+		return
+
 	row = -1
 	finance_book = asset.get("schedules")[0].get("finance_book")
 	for schedule in asset.get("schedules"):
@@ -474,17 +486,21 @@ def get_gl_entries_on_asset_disposal(
 			},
 			item=asset,
 		),
-		asset.get_gl_dict(
-			{
-				"account": accumulated_depr_account,
-				"debit_in_account_currency": accumulated_depr_amount,
-				"debit": accumulated_depr_amount,
-				"cost_center": depreciation_cost_center,
-				"posting_date": date,
-			},
-			item=asset,
-		),
 	]
+
+	if accumulated_depr_amount:
+		gl_entries.append(
+			asset.get_gl_dict(
+				{
+					"account": accumulated_depr_account,
+					"debit_in_account_currency": accumulated_depr_amount,
+					"debit": accumulated_depr_amount,
+					"cost_center": depreciation_cost_center,
+					"posting_date": date,
+				},
+				item=asset,
+			),
+		)
 
 	profit_amount = flt(selling_amount) - flt(value_after_depreciation)
 	if profit_amount:
@@ -591,3 +607,9 @@ def is_last_day_of_the_month(date):
 	last_day_of_the_month = get_last_day(date)
 
 	return getdate(last_day_of_the_month) == getdate(date)
+
+
+def is_first_day_of_the_month(date):
+	first_day_of_the_month = get_first_day(date)
+
+	return getdate(first_day_of_the_month) == getdate(date)
