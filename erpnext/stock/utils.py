@@ -220,7 +220,7 @@ def get_bin(item_code, warehouse):
 
 
 def get_or_make_bin(item_code: str, warehouse: str) -> str:
-	bin_record = frappe.db.get_value("Bin", {"item_code": item_code, "warehouse": warehouse})
+	bin_record = frappe.get_cached_value("Bin", {"item_code": item_code, "warehouse": warehouse})
 
 	if not bin_record:
 		bin_obj = _create_bin(item_code, warehouse)
@@ -475,7 +475,7 @@ def add_additional_uom_columns(columns, result, include_uom, conversion_factors)
 
 	for row_idx, row in enumerate(result):
 		for convertible_col, data in convertible_column_map.items():
-			conversion_factor = conversion_factors[row.get("item_code")] or 1
+			conversion_factor = conversion_factors.get(row.get("item_code")) or 1.0
 			for_type = data.for_type
 			value_before_conversion = row.get(convertible_col)
 			if for_type == "rate":

@@ -331,3 +331,9 @@ execute:frappe.db.set_single_value("Accounts Settings", "merge_similar_account_h
 # below migration patches should always run last
 erpnext.patches.v14_0.migrate_gl_to_payment_ledger
 erpnext.patches.v14_0.update_company_in_ldc
+erpnext.patches.v14_0.set_packed_qty_in_draft_delivery_notes
+erpnext.patches.v14_0.cleanup_workspaces
+erpnext.patches.v14_0.enable_allow_existing_serial_no
+erpnext.patches.v14_0.set_report_in_process_SOA 
+erpnext.patches.v14_0.create_accounting_dimensions_for_closing_balance
+erpnext.patches.v14_0.update_closing_balances #15-07-2023

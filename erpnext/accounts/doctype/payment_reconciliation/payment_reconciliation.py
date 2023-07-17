@@ -6,7 +6,6 @@ import frappe
 from frappe import _, msgprint, qb
 from frappe.model.document import Document
 from frappe.query_builder.custom import ConstantColumn
-from frappe.query_builder.functions import IfNull
 from frappe.utils import flt, get_link_to_form, getdate, nowdate, today
 
 import erpnext
@@ -127,12 +126,29 @@ class PaymentReconciliation(Document):
 
 		return list(journal_entries)
 
+	def get_return_invoices(self):
+		voucher_type = "Sales Invoice" if self.party_type == "Customer" else "Purchase Invoice"
+		doc = qb.DocType(voucher_type)
+		self.return_invoices = (
+			qb.from_(doc)
+			.select(
+				ConstantColumn(voucher_type).as_("voucher_type"),
+				doc.name.as_("voucher_no"),
+				doc.return_against,
+			)
+			.where(
+				(doc.docstatus == 1)
+				& (doc[frappe.scrub(self.party_type)] == self.party)
+				& (doc.is_return == 1)
+			)
+			.run(as_dict=True)
+		)
+
 	def get_dr_or_cr_notes(self):
 
 		self.build_qb_filter_conditions(get_return_invoices=True)
 
 		ple = qb.DocType("Payment Ledger Entry")
-		voucher_type = "Sales Invoice" if self.party_type == "Customer" else "Purchase Invoice"
 
 		if erpnext.get_party_account_type(self.party_type) == "Receivable":
 			self.common_filter_conditions.append(ple.account_type == "Receivable")
@@ -140,19 +156,10 @@ class PaymentReconciliation(Document):
 			self.common_filter_conditions.append(ple.account_type == "Payable")
 		self.common_filter_conditions.append(ple.account == self.receivable_payable_account)
 
-		# get return invoices
-		doc = qb.DocType(voucher_type)
-		return_invoices = (
-			qb.from_(doc)
-			.select(ConstantColumn(voucher_type).as_("voucher_type"), doc.name.as_("voucher_no"))
-			.where(
-				(doc.docstatus == 1)
-				& (doc[frappe.scrub(self.party_type)] == self.party)
-				& (doc.is_return == 1)
-				& (IfNull(doc.return_against, "") == "")
-			)
-			.run(as_dict=True)
-		)
+		self.get_return_invoices()
+		return_invoices = [
+			x for x in self.return_invoices if x.return_against == None or x.return_against == ""
+		]
 
 		outstanding_dr_or_cr = []
 		if return_invoices:
@@ -204,6 +211,15 @@ class PaymentReconciliation(Document):
 			accounting_dimensions=self.accounting_dimension_filter_conditions,
 		)
 
+		cr_dr_notes = (
+			[x.voucher_no for x in self.return_invoices]
+			if self.party_type in ["Customer", "Supplier"]
+			else []
+		)
+		# Filter out cr/dr notes from outstanding invoices list
+		# Happens when non-standalone cr/dr notes are linked with another invoice through journal entry
+		non_reconciled_invoices = [x for x in non_reconciled_invoices if x.voucher_no not in cr_dr_notes]
+
 		if self.invoice_limit:
 			non_reconciled_invoices = non_reconciled_invoices[: self.invoice_limit]
 
@@ -235,6 +251,10 @@ class PaymentReconciliation(Document):
 				difference_amount = allocated_amount_in_ref_rate - allocated_amount_in_inv_rate
 
 		return difference_amount
+
+	@frappe.whitelist()
+	def is_auto_process_enabled(self):
+		return frappe.db.get_single_value("Accounts Settings", "auto_reconcile_payments")
 
 	@frappe.whitelist()
 	def calculate_difference_on_allocation_change(self, payment_entry, invoice, allocated_amount):
@@ -327,7 +347,10 @@ class PaymentReconciliation(Document):
 				payment_details = self.get_payment_details(row, dr_or_cr)
 				reconciled_entry.append(payment_details)
 
-				if payment_details.difference_amount:
+				if payment_details.difference_amount and row.reference_type not in [
+					"Sales Invoice",
+					"Purchase Invoice",
+				]:
 					self.make_difference_entry(payment_details)
 
 		if entry_list:
@@ -412,6 +435,8 @@ class PaymentReconciliation(Document):
 
 		journal_entry.save()
 		journal_entry.submit()
+
+		return journal_entry
 
 	def get_payment_details(self, row, dr_or_cr):
 		return frappe._dict(
@@ -578,6 +603,16 @@ class PaymentReconciliation(Document):
 
 
 def reconcile_dr_cr_note(dr_cr_notes, company):
+	def get_difference_row(inv):
+		if inv.difference_amount != 0 and inv.difference_account:
+			difference_row = {
+				"account": inv.difference_account,
+				inv.dr_or_cr: abs(inv.difference_amount) if inv.difference_amount > 0 else 0,
+				reconcile_dr_or_cr: abs(inv.difference_amount) if inv.difference_amount < 0 else 0,
+				"cost_center": erpnext.get_default_cost_center(company),
+			}
+			return difference_row
+
 	for inv in dr_cr_notes:
 		voucher_type = "Credit Note" if inv.voucher_type == "Sales Invoice" else "Debit Note"
 
@@ -622,5 +657,9 @@ def reconcile_dr_cr_note(dr_cr_notes, company):
 				],
 			}
 		)
+
+		if difference_entry := get_difference_row(inv):
+			jv.append("accounts", difference_entry)
+
 		jv.flags.ignore_mandatory = True
 		jv.submit()
