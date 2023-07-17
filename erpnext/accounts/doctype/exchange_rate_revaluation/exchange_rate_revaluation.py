@@ -93,6 +93,12 @@ class ExchangeRateRevaluation(Document):
 
 		return True
 
+	def fetch_and_calculate_accounts_data(self):
+		accounts = self.get_accounts_data()
+		if accounts:
+			for acc in accounts:
+				self.append("accounts", acc)
+
 	@frappe.whitelist()
 	def get_accounts_data(self):
 		self.validate_mandatory()
@@ -244,9 +250,21 @@ class ExchangeRateRevaluation(Document):
 				if d.balance != 0:
 					current_exchange_rate = new_exchange_rate = 0
 
-				new_balance_in_account_currency = 0  # this will be '0'
-				new_balance_in_base_currency = 0  # this will be '0'
-				gain_loss = flt(new_balance_in_base_currency, precision) - flt(d.balance, precision)
+					new_balance_in_account_currency = 0  # this will be '0'
+					new_balance_in_base_currency = 0  # this will be '0'
+					gain_loss = flt(new_balance_in_base_currency, precision) - flt(d.balance, precision)
+				else:
+					new_exchange_rate = 0
+					new_balance_in_base_currency = 0
+					new_balance_in_account_currency = 0
+
+					current_exchange_rate = (
+						calculate_exchange_rate_using_last_gle(company, d.account, d.party_type, d.party) or 0.0
+					)
+
+					gain_loss = new_balance_in_account_currency - (
+						current_exchange_rate * d.balance_in_account_currency
+					)
 
 				if gain_loss:
 					accounts.append(
