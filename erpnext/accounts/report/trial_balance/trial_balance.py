@@ -221,12 +221,18 @@ def get_opening_balance(
 		)
 	else:
 		if start_date:
-			opening_balance = opening_balance.where(closing_balance.posting_date >= start_date)
+			opening_balance = opening_balance.where(
+				(closing_balance.posting_date >= start_date)
+				& (closing_balance.posting_date < filters.from_date)
+			)
 			opening_balance = opening_balance.where(closing_balance.is_opening == "No")
 		else:
 			opening_balance = opening_balance.where(
 				(closing_balance.posting_date < filters.from_date) | (closing_balance.is_opening == "Yes")
 			)
+
+	if doctype == "GL Entry":
+		opening_balance = opening_balance.where(closing_balance.is_cancelled == 0)
 
 	if (
 		not filters.show_unclosed_fy_pl_balances
@@ -247,7 +253,7 @@ def get_opening_balance(
 		lft, rgt = frappe.db.get_value("Cost Center", filters.cost_center, ["lft", "rgt"])
 		cost_center = frappe.qb.DocType("Cost Center")
 		opening_balance = opening_balance.where(
-			closing_balance.cost_center.in_(
+			closing_balance.cost_center.isin(
 				frappe.qb.from_(cost_center)
 				.select("name")
 				.where((cost_center.lft >= lft) & (cost_center.rgt <= rgt))
