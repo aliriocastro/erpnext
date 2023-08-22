@@ -148,17 +148,33 @@ class Asset(AccountsController):
 			frappe.throw(_("Item {0} must be a non-stock item").format(self.item_code))
 
 	def validate_cost_center(self):
-		if not self.cost_center:
-			return
-
-		cost_center_company = frappe.db.get_value("Cost Center", self.cost_center, "company")
-		if cost_center_company != self.company:
-			frappe.throw(
-				_("Selected Cost Center {} doesn't belongs to {}").format(
-					frappe.bold(self.cost_center), frappe.bold(self.company)
-				),
-				title=_("Invalid Cost Center"),
+		if self.cost_center:
+			cost_center_company, cost_center_is_group = frappe.db.get_value(
+				"Cost Center", self.cost_center, ["company", "is_group"]
 			)
+			if cost_center_company != self.company:
+				frappe.throw(
+					_("Cost Center {} doesn't belong to Company {}").format(
+						frappe.bold(self.cost_center), frappe.bold(self.company)
+					),
+					title=_("Invalid Cost Center"),
+				)
+			if cost_center_is_group:
+				frappe.throw(
+					_(
+						"Cost Center {} is a group cost center and group cost centers cannot be used in transactions"
+					).format(frappe.bold(self.cost_center)),
+					title=_("Invalid Cost Center"),
+				)
+
+		else:
+			if not frappe.get_cached_value("Company", self.company, "depreciation_cost_center"):
+				frappe.throw(
+					_(
+						"Please set a Cost Center for the Asset or set an Asset Depreciation Cost Center for the Company {}"
+					).format(frappe.bold(self.company)),
+					title=_("Missing Cost Center"),
+				)
 
 	def validate_in_use_date(self):
 		if not self.available_for_use_date:
@@ -207,8 +223,11 @@ class Asset(AccountsController):
 
 		if not self.calculate_depreciation:
 			return
-		elif not self.finance_books:
-			frappe.throw(_("Enter depreciation details"))
+		else:
+			if not self.finance_books:
+				frappe.throw(_("Enter depreciation details"))
+			if self.is_fully_depreciated:
+				frappe.throw(_("Depreciation cannot be calculated for fully depreciated assets"))
 
 		if self.is_existing_asset:
 			return
@@ -588,7 +607,7 @@ class Asset(AccountsController):
 			depreciable_amount = flt(self.gross_purchase_amount) - flt(row.expected_value_after_useful_life)
 			if flt(self.opening_accumulated_depreciation) > depreciable_amount:
 				frappe.throw(
-					_("Opening Accumulated Depreciation must be less than equal to {0}").format(
+					_("Opening Accumulated Depreciation must be less than or equal to {0}").format(
 						depreciable_amount
 					)
 				)
@@ -793,7 +812,9 @@ class Asset(AccountsController):
 					expected_value_after_useful_life = self.finance_books[idx].expected_value_after_useful_life
 					value_after_depreciation = self.finance_books[idx].value_after_depreciation
 
-				if flt(value_after_depreciation) <= expected_value_after_useful_life:
+				if (
+					flt(value_after_depreciation) <= expected_value_after_useful_life or self.is_fully_depreciated
+				):
 					status = "Fully Depreciated"
 				elif flt(value_after_depreciation) < flt(self.gross_purchase_amount):
 					status = "Partially Depreciated"
@@ -941,7 +962,9 @@ class Asset(AccountsController):
 
 	@frappe.whitelist()
 	def get_manual_depreciation_entries(self):
-		(_, _, depreciation_expense_account) = get_depreciation_accounts(self)
+		(_, _, depreciation_expense_account) = get_depreciation_accounts(
+			self.asset_category, self.company
+		)
 
 		gle = frappe.qb.DocType("GL Entry")
 
@@ -1180,10 +1203,10 @@ def get_asset_account(account_name, asset=None, asset_category=None, company=Non
 def make_journal_entry(asset_name):
 	asset = frappe.get_doc("Asset", asset_name)
 	(
-		fixed_asset_account,
+		_,
 		accumulated_depreciation_account,
 		depreciation_expense_account,
-	) = get_depreciation_accounts(asset)
+	) = get_depreciation_accounts(asset.asset_category, asset.company)
 
 	depreciation_cost_center, depreciation_series = frappe.get_cached_value(
 		"Company", asset.company, ["depreciation_cost_center", "series_for_depreciation_entry"]
@@ -1266,29 +1289,38 @@ def get_total_days(date, frequency):
 	return date_diff(date, period_start_date)
 
 
-@erpnext.allow_regional
 def get_depreciation_amount(
 	asset,
 	depreciable_value,
-	row,
+	fb_row,
 	schedule_idx=0,
 	prev_depreciation_amount=0,
 	has_wdv_or_dd_non_yearly_pro_rata=False,
 ):
-	if row.depreciation_method in ("Straight Line", "Manual"):
-		return get_straight_line_or_manual_depr_amount(asset, row)
+	frappe.flags.company = asset.company
+
+	if fb_row.depreciation_method in ("Straight Line", "Manual"):
+		return get_straight_line_or_manual_depr_amount(asset, fb_row, schedule_idx)
 	else:
+		rate_of_depreciation = get_updated_rate_of_depreciation_for_wdv_and_dd(
+			asset, depreciable_value, fb_row
+		)
 		return get_wdv_or_dd_depr_amount(
 			depreciable_value,
-			row.rate_of_depreciation,
-			row.frequency_of_depreciation,
+			rate_of_depreciation,
+			fb_row.frequency_of_depreciation,
 			schedule_idx,
 			prev_depreciation_amount,
 			has_wdv_or_dd_non_yearly_pro_rata,
 		)
 
 
-def get_straight_line_or_manual_depr_amount(asset, row):
+@erpnext.allow_regional
+def get_updated_rate_of_depreciation_for_wdv_and_dd(asset, depreciable_value, fb_row):
+	return fb_row.rate_of_depreciation
+
+
+def get_straight_line_or_manual_depr_amount(asset, row, schedule_idx):
 	# if the Depreciation Schedule is being modified after Asset Repair due to increase in asset life and value
 	if asset.flags.increase_in_asset_life:
 		return (flt(row.value_after_depreciation) - flt(row.expected_value_after_useful_life)) / (
@@ -1301,11 +1333,30 @@ def get_straight_line_or_manual_depr_amount(asset, row):
 		)
 	# if the Depreciation Schedule is being prepared for the first time
 	else:
-		return (
-			flt(asset.gross_purchase_amount)
-			- flt(asset.opening_accumulated_depreciation)
-			- flt(row.expected_value_after_useful_life)
-		) / flt(row.total_number_of_depreciations - asset.number_of_depreciations_booked)
+		if row.daily_depreciation:
+			daily_depr_amount = (
+				flt(asset.gross_purchase_amount)
+				- flt(asset.opening_accumulated_depreciation)
+				- flt(row.expected_value_after_useful_life)
+			) / date_diff(
+				add_months(
+					row.depreciation_start_date,
+					flt(row.total_number_of_depreciations - asset.number_of_depreciations_booked)
+					* row.frequency_of_depreciation,
+				),
+				row.depreciation_start_date,
+			)
+			to_date = add_months(row.depreciation_start_date, schedule_idx * row.frequency_of_depreciation)
+			from_date = add_months(
+				row.depreciation_start_date, (schedule_idx - 1) * row.frequency_of_depreciation
+			)
+			return daily_depr_amount * date_diff(to_date, from_date)
+		else:
+			return (
+				flt(asset.gross_purchase_amount)
+				- flt(asset.opening_accumulated_depreciation)
+				- flt(row.expected_value_after_useful_life)
+			) / flt(row.total_number_of_depreciations - asset.number_of_depreciations_booked)
 
 
 def get_wdv_or_dd_depr_amount(

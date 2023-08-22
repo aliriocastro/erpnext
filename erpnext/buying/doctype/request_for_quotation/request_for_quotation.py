@@ -116,7 +116,10 @@ class RequestforQuotation(BuyingController):
 		route = frappe.db.get_value(
 			"Portal Menu Item", {"reference_doctype": "Request for Quotation"}, ["route"]
 		)
-		return get_url("/app/{0}/".format(route) + self.name)
+		if not route:
+			frappe.throw(_("Please add Request for Quotation to the sidebar in Portal Settings."))
+
+		return get_url(f"{route}/{self.name}")
 
 	def update_supplier_part_no(self, supplier):
 		self.vendor = supplier
@@ -209,7 +212,9 @@ class RequestforQuotation(BuyingController):
 		if preview:
 			return message
 
-		attachments = self.get_attachments()
+		attachments = None
+		if self.send_attached_files:
+			attachments = self.get_attachments()
 
 		self.send_email(data, sender, subject, message, attachments)
 
