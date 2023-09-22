@@ -40,6 +40,7 @@ class Asset(AccountsController):
 		self.validate_item()
 		self.validate_cost_center()
 		self.set_missing_values()
+		self.validate_finance_books()
 		if not self.split_from:
 			self.prepare_depreciation_data()
 		self.validate_gross_and_purchase_amount()
@@ -81,18 +82,27 @@ class Asset(AccountsController):
 				_("Purchase Invoice cannot be made against an existing asset {0}").format(self.name)
 			)
 
-	def prepare_depreciation_data(self, date_of_disposal=None, date_of_return=None):
+	def prepare_depreciation_data(
+		self,
+		date_of_disposal=None,
+		date_of_return=None,
+		value_after_depreciation=None,
+		ignore_booked_entry=False,
+	):
 		if self.calculate_depreciation:
 			self.value_after_depreciation = 0
 			self.set_depreciation_rate()
 			if self.should_prepare_depreciation_schedule():
-				self.make_depreciation_schedule(date_of_disposal)
-				self.set_accumulated_depreciation(date_of_disposal, date_of_return)
+				self.make_depreciation_schedule(date_of_disposal, value_after_depreciation)
+				self.set_accumulated_depreciation(date_of_disposal, date_of_return, ignore_booked_entry)
 		else:
 			self.finance_books = []
-			self.value_after_depreciation = flt(self.gross_purchase_amount) - flt(
-				self.opening_accumulated_depreciation
-			)
+			if value_after_depreciation:
+				self.value_after_depreciation = value_after_depreciation
+			else:
+				self.value_after_depreciation = flt(self.gross_purchase_amount) - flt(
+					self.opening_accumulated_depreciation
+				)
 
 	def should_prepare_depreciation_schedule(self):
 		if not self.get("schedules"):
@@ -148,17 +158,33 @@ class Asset(AccountsController):
 			frappe.throw(_("Item {0} must be a non-stock item").format(self.item_code))
 
 	def validate_cost_center(self):
-		if not self.cost_center:
-			return
-
-		cost_center_company = frappe.db.get_value("Cost Center", self.cost_center, "company")
-		if cost_center_company != self.company:
-			frappe.throw(
-				_("Selected Cost Center {} doesn't belongs to {}").format(
-					frappe.bold(self.cost_center), frappe.bold(self.company)
-				),
-				title=_("Invalid Cost Center"),
+		if self.cost_center:
+			cost_center_company, cost_center_is_group = frappe.db.get_value(
+				"Cost Center", self.cost_center, ["company", "is_group"]
 			)
+			if cost_center_company != self.company:
+				frappe.throw(
+					_("Cost Center {} doesn't belong to Company {}").format(
+						frappe.bold(self.cost_center), frappe.bold(self.company)
+					),
+					title=_("Invalid Cost Center"),
+				)
+			if cost_center_is_group:
+				frappe.throw(
+					_(
+						"Cost Center {} is a group cost center and group cost centers cannot be used in transactions"
+					).format(frappe.bold(self.cost_center)),
+					title=_("Invalid Cost Center"),
+				)
+
+		else:
+			if not frappe.get_cached_value("Company", self.company, "depreciation_cost_center"):
+				frappe.throw(
+					_(
+						"Please set a Cost Center for the Asset or set an Asset Depreciation Cost Center for the Company {}"
+					).format(frappe.bold(self.company)),
+					title=_("Missing Cost Center"),
+				)
 
 	def validate_in_use_date(self):
 		if not self.available_for_use_date:
@@ -180,6 +206,27 @@ class Asset(AccountsController):
 		if self.item_code and not self.get("finance_books"):
 			finance_books = get_item_details(self.item_code, self.asset_category)
 			self.set("finance_books", finance_books)
+
+	def validate_finance_books(self):
+		if not self.calculate_depreciation or len(self.finance_books) == 1:
+			return
+
+		finance_books = set()
+
+		for d in self.finance_books:
+			if d.finance_book in finance_books:
+				frappe.throw(
+					_("Row #{}: Please use a different Finance Book.").format(d.idx),
+					title=_("Duplicate Finance Book"),
+				)
+			else:
+				finance_books.add(d.finance_book)
+
+			if not d.finance_book:
+				frappe.throw(
+					_("Row #{}: Finance Book should not be empty since you're using multiple.").format(d.idx),
+					title=_("Missing Finance Book"),
+				)
 
 	def validate_asset_values(self):
 		if not self.asset_category:
@@ -207,8 +254,11 @@ class Asset(AccountsController):
 
 		if not self.calculate_depreciation:
 			return
-		elif not self.finance_books:
-			frappe.throw(_("Enter depreciation details"))
+		else:
+			if not self.finance_books:
+				frappe.throw(_("Enter depreciation details"))
+			if self.is_fully_depreciated:
+				frappe.throw(_("Depreciation cannot be calculated for fully depreciated assets"))
 
 		if self.is_existing_asset:
 			return
@@ -266,7 +316,7 @@ class Asset(AccountsController):
 				self.get_depreciation_rate(d, on_validate=True), d.precision("rate_of_depreciation")
 			)
 
-	def make_depreciation_schedule(self, date_of_disposal):
+	def make_depreciation_schedule(self, date_of_disposal, value_after_depreciation=None):
 		if not self.get("schedules"):
 			self.schedules = []
 
@@ -276,24 +326,30 @@ class Asset(AccountsController):
 		start = self.clear_depreciation_schedule()
 
 		for finance_book in self.get("finance_books"):
-			self._make_depreciation_schedule(finance_book, start, date_of_disposal)
+			self._make_depreciation_schedule(
+				finance_book, start, date_of_disposal, value_after_depreciation
+			)
 
 		if len(self.get("finance_books")) > 1 and any(start):
 			self.sort_depreciation_schedule()
 
-	def _make_depreciation_schedule(self, finance_book, start, date_of_disposal):
+	def _make_depreciation_schedule(
+		self, finance_book, start, date_of_disposal, value_after_depreciation=None
+	):
 		self.validate_asset_finance_books(finance_book)
 
-		value_after_depreciation = self._get_value_after_depreciation_for_making_schedule(finance_book)
+		if not value_after_depreciation:
+			value_after_depreciation = self._get_value_after_depreciation_for_making_schedule(finance_book)
+
 		finance_book.value_after_depreciation = value_after_depreciation
 
-		number_of_pending_depreciations = cint(finance_book.total_number_of_depreciations) - cint(
+		final_number_of_depreciations = cint(finance_book.total_number_of_depreciations) - cint(
 			self.number_of_depreciations_booked
 		)
 
 		has_pro_rata = self.check_is_pro_rata(finance_book)
 		if has_pro_rata:
-			number_of_pending_depreciations += 1
+			final_number_of_depreciations += 1
 
 		has_wdv_or_dd_non_yearly_pro_rata = False
 		if (
@@ -309,7 +365,9 @@ class Asset(AccountsController):
 
 		depreciation_amount = 0
 
-		for n in range(start[finance_book.idx - 1], number_of_pending_depreciations):
+		number_of_pending_depreciations = final_number_of_depreciations - start[finance_book.idx - 1]
+
+		for n in range(start[finance_book.idx - 1], final_number_of_depreciations):
 			# If depreciation is already completed (for double declining balance)
 			if skip_row:
 				continue
@@ -326,10 +384,11 @@ class Asset(AccountsController):
 				n,
 				prev_depreciation_amount,
 				has_wdv_or_dd_non_yearly_pro_rata,
+				number_of_pending_depreciations,
 			)
 
 			if not has_pro_rata or (
-				n < (cint(number_of_pending_depreciations) - 1) or number_of_pending_depreciations == 2
+				n < (cint(final_number_of_depreciations) - 1) or final_number_of_depreciations == 2
 			):
 				schedule_date = add_months(
 					finance_book.depreciation_start_date, n * cint(finance_book.frequency_of_depreciation)
@@ -397,7 +456,7 @@ class Asset(AccountsController):
 				)
 
 			# For last row
-			elif has_pro_rata and n == cint(number_of_pending_depreciations) - 1:
+			elif has_pro_rata and n == cint(final_number_of_depreciations) - 1:
 				if not self.flags.increase_in_asset_life:
 					# In case of increase_in_asset_life, the self.to_date is already set on asset_repair submission
 					self.to_date = add_months(
@@ -428,7 +487,7 @@ class Asset(AccountsController):
 			# Adjust depreciation amount in the last period based on the expected value after useful life
 			if finance_book.expected_value_after_useful_life and (
 				(
-					n == cint(number_of_pending_depreciations) - 1
+					n == cint(final_number_of_depreciations) - 1
 					and value_after_depreciation != finance_book.expected_value_after_useful_life
 				)
 				or value_after_depreciation < finance_book.expected_value_after_useful_life
@@ -588,7 +647,7 @@ class Asset(AccountsController):
 			depreciable_amount = flt(self.gross_purchase_amount) - flt(row.expected_value_after_useful_life)
 			if flt(self.opening_accumulated_depreciation) > depreciable_amount:
 				frappe.throw(
-					_("Opening Accumulated Depreciation must be less than equal to {0}").format(
+					_("Opening Accumulated Depreciation must be less than or equal to {0}").format(
 						depreciable_amount
 					)
 				)
@@ -671,7 +730,10 @@ class Asset(AccountsController):
 					if s.finance_book_id == d.finance_book_id
 					and (s.depreciation_method == "Straight Line" or s.depreciation_method == "Manual")
 				]
-				accumulated_depreciation = flt(self.opening_accumulated_depreciation)
+				if i > 0 and self.flags.decrease_in_asset_value_due_to_value_adjustment:
+					accumulated_depreciation = self.get("schedules")[i - 1].accumulated_depreciation_amount
+				else:
+					accumulated_depreciation = flt(self.opening_accumulated_depreciation)
 				value_after_depreciation = flt(
 					self.get("finance_books")[cint(d.finance_book_id) - 1].value_after_depreciation
 				)
@@ -793,7 +855,9 @@ class Asset(AccountsController):
 					expected_value_after_useful_life = self.finance_books[idx].expected_value_after_useful_life
 					value_after_depreciation = self.finance_books[idx].value_after_depreciation
 
-				if flt(value_after_depreciation) <= expected_value_after_useful_life:
+				if (
+					flt(value_after_depreciation) <= expected_value_after_useful_life or self.is_fully_depreciated
+				):
 					status = "Fully Depreciated"
 				elif flt(value_after_depreciation) < flt(self.gross_purchase_amount):
 					status = "Partially Depreciated"
@@ -941,7 +1005,9 @@ class Asset(AccountsController):
 
 	@frappe.whitelist()
 	def get_manual_depreciation_entries(self):
-		(_, _, depreciation_expense_account) = get_depreciation_accounts(self)
+		(_, _, depreciation_expense_account) = get_depreciation_accounts(
+			self.asset_category, self.company
+		)
 
 		gle = frappe.qb.DocType("GL Entry")
 
@@ -1180,10 +1246,10 @@ def get_asset_account(account_name, asset=None, asset_category=None, company=Non
 def make_journal_entry(asset_name):
 	asset = frappe.get_doc("Asset", asset_name)
 	(
-		fixed_asset_account,
+		_,
 		accumulated_depreciation_account,
 		depreciation_expense_account,
-	) = get_depreciation_accounts(asset)
+	) = get_depreciation_accounts(asset.asset_category, asset.company)
 
 	depreciation_cost_center, depreciation_series = frappe.get_cached_value(
 		"Company", asset.company, ["depreciation_cost_center", "series_for_depreciation_entry"]
@@ -1266,29 +1332,43 @@ def get_total_days(date, frequency):
 	return date_diff(date, period_start_date)
 
 
-@erpnext.allow_regional
 def get_depreciation_amount(
 	asset,
 	depreciable_value,
-	row,
+	fb_row,
 	schedule_idx=0,
 	prev_depreciation_amount=0,
 	has_wdv_or_dd_non_yearly_pro_rata=False,
+	number_of_pending_depreciations=0,
 ):
-	if row.depreciation_method in ("Straight Line", "Manual"):
-		return get_straight_line_or_manual_depr_amount(asset, row)
+	frappe.flags.company = asset.company
+
+	if fb_row.depreciation_method in ("Straight Line", "Manual"):
+		return get_straight_line_or_manual_depr_amount(
+			asset, fb_row, schedule_idx, number_of_pending_depreciations
+		)
 	else:
+		rate_of_depreciation = get_updated_rate_of_depreciation_for_wdv_and_dd(
+			asset, depreciable_value, fb_row
+		)
 		return get_wdv_or_dd_depr_amount(
 			depreciable_value,
-			row.rate_of_depreciation,
-			row.frequency_of_depreciation,
+			rate_of_depreciation,
+			fb_row.frequency_of_depreciation,
 			schedule_idx,
 			prev_depreciation_amount,
 			has_wdv_or_dd_non_yearly_pro_rata,
 		)
 
 
-def get_straight_line_or_manual_depr_amount(asset, row):
+@erpnext.allow_regional
+def get_updated_rate_of_depreciation_for_wdv_and_dd(asset, depreciable_value, fb_row):
+	return fb_row.rate_of_depreciation
+
+
+def get_straight_line_or_manual_depr_amount(
+	asset, row, schedule_idx, number_of_pending_depreciations
+):
 	# if the Depreciation Schedule is being modified after Asset Repair due to increase in asset life and value
 	if asset.flags.increase_in_asset_life:
 		return (flt(row.value_after_depreciation) - flt(row.expected_value_after_useful_life)) / (
@@ -1299,13 +1379,88 @@ def get_straight_line_or_manual_depr_amount(asset, row):
 		return (flt(row.value_after_depreciation) - flt(row.expected_value_after_useful_life)) / flt(
 			row.total_number_of_depreciations
 		)
+	# if the Depreciation Schedule is being modified after Asset Value Adjustment due to decrease in asset value
+	elif asset.flags.decrease_in_asset_value_due_to_value_adjustment:
+		if row.daily_depreciation:
+			daily_depr_amount = (
+				flt(row.value_after_depreciation) - flt(row.expected_value_after_useful_life)
+			) / date_diff(
+				get_last_day(
+					add_months(
+						row.depreciation_start_date,
+						flt(row.total_number_of_depreciations - asset.number_of_depreciations_booked - 1)
+						* row.frequency_of_depreciation,
+					)
+				),
+				add_days(
+					get_last_day(
+						add_months(
+							row.depreciation_start_date,
+							flt(
+								row.total_number_of_depreciations
+								- asset.number_of_depreciations_booked
+								- number_of_pending_depreciations
+								- 1
+							)
+							* row.frequency_of_depreciation,
+						)
+					),
+					1,
+				),
+			)
+
+			to_date = get_last_day(
+				add_months(row.depreciation_start_date, schedule_idx * row.frequency_of_depreciation)
+			)
+			from_date = add_days(
+				get_last_day(
+					add_months(row.depreciation_start_date, (schedule_idx - 1) * row.frequency_of_depreciation)
+				),
+				1,
+			)
+
+			return daily_depr_amount * (date_diff(to_date, from_date) + 1)
+		else:
+			return (
+				flt(row.value_after_depreciation) - flt(row.expected_value_after_useful_life)
+			) / number_of_pending_depreciations
 	# if the Depreciation Schedule is being prepared for the first time
 	else:
-		return (
-			flt(asset.gross_purchase_amount)
-			- flt(asset.opening_accumulated_depreciation)
-			- flt(row.expected_value_after_useful_life)
-		) / flt(row.total_number_of_depreciations - asset.number_of_depreciations_booked)
+		if row.daily_depreciation:
+			daily_depr_amount = (
+				flt(asset.gross_purchase_amount)
+				- flt(asset.opening_accumulated_depreciation)
+				- flt(row.expected_value_after_useful_life)
+			) / date_diff(
+				get_last_day(
+					add_months(
+						row.depreciation_start_date,
+						flt(row.total_number_of_depreciations - asset.number_of_depreciations_booked - 1)
+						* row.frequency_of_depreciation,
+					)
+				),
+				add_days(
+					get_last_day(add_months(row.depreciation_start_date, -1 * row.frequency_of_depreciation)), 1
+				),
+			)
+
+			to_date = get_last_day(
+				add_months(row.depreciation_start_date, schedule_idx * row.frequency_of_depreciation)
+			)
+			from_date = add_days(
+				get_last_day(
+					add_months(row.depreciation_start_date, (schedule_idx - 1) * row.frequency_of_depreciation)
+				),
+				1,
+			)
+
+			return daily_depr_amount * (date_diff(to_date, from_date) + 1)
+		else:
+			return (
+				flt(asset.gross_purchase_amount)
+				- flt(asset.opening_accumulated_depreciation)
+				- flt(row.expected_value_after_useful_life)
+			) / flt(row.total_number_of_depreciations - asset.number_of_depreciations_booked)
 
 
 def get_wdv_or_dd_depr_amount(

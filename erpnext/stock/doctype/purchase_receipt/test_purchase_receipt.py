@@ -1258,6 +1258,70 @@ class TestPurchaseReceipt(FrappeTestCase):
 
 		self.assertEqual(query[0].value, 0)
 
+	def test_rejected_qty_for_internal_transfer(self):
+		from erpnext.stock.doctype.delivery_note.delivery_note import make_inter_company_purchase_receipt
+		from erpnext.stock.doctype.delivery_note.test_delivery_note import create_delivery_note
+
+		prepare_data_for_internal_transfer()
+		customer = "_Test Internal Customer 2"
+		company = "_Test Company with perpetual inventory"
+
+		from_warehouse = create_warehouse("_Test Internal From Warehouse New", company=company)
+		to_warehouse = create_warehouse("_Test Internal To Warehouse New", company=company)
+		rejected_warehouse = create_warehouse(
+			"_Test Rejected Internal To Warehouse New", company=company
+		)
+		item_doc = make_item(
+			"Test Internal Transfer Item DS",
+			{
+				"is_purchase_item": 1,
+				"is_stock_item": 1,
+				"has_serial_no": 1,
+				"serial_no_series": "SBNS.#####",
+			},
+		)
+
+		target_warehouse = create_warehouse("_Test Internal GIT Warehouse New", company=company)
+
+		pr = make_purchase_receipt(
+			item_code=item_doc.name,
+			company=company,
+			posting_date=add_days(today(), -1),
+			warehouse=from_warehouse,
+			qty=2,
+			rate=100,
+		)
+
+		dn1 = create_delivery_note(
+			item_code=item_doc.name,
+			company=company,
+			customer=customer,
+			serial_no=pr.items[0].serial_no,
+			cost_center="Main - TCP1",
+			expense_account="Cost of Goods Sold - TCP1",
+			qty=2,
+			rate=500,
+			warehouse=from_warehouse,
+			target_warehouse=target_warehouse,
+		)
+
+		sns = get_serial_nos(dn1.items[0].serial_no)
+
+		self.assertEqual(len(sns), 2)
+
+		pr1 = make_inter_company_purchase_receipt(dn1.name)
+		pr1.items[0].qty = 1.0
+		pr1.items[0].rejected_qty = 1.0
+		pr1.items[0].serial_no = sns[0]
+		pr1.items[0].rejected_serial_no = sns[1]
+		pr1.items[0].warehouse = to_warehouse
+		pr1.items[0].rejected_warehouse = rejected_warehouse
+		pr1.submit()
+
+		rejected_serial_no_wh = frappe.get_cached_value("Serial No", sns[1], "warehouse")
+
+		self.assertEqual(rejected_warehouse, rejected_serial_no_wh)
+
 	def test_backdated_transaction_for_internal_transfer_in_trasit_warehouse_for_purchase_receipt(
 		self,
 	):
@@ -1959,6 +2023,49 @@ class TestPurchaseReceipt(FrappeTestCase):
 
 		ste7.reload()
 		self.assertEqual(ste7.items[0].valuation_rate, valuation_rate)
+
+	def test_purchase_receipt_provisional_accounting(self):
+		# Step - 1: Create Supplier with Default Currency as USD
+		from erpnext.buying.doctype.supplier.test_supplier import create_supplier
+
+		supplier = create_supplier(default_currency="USD")
+
+		# Step - 2: Setup Company for Provisional Accounting
+		from erpnext.accounts.doctype.account.test_account import create_account
+
+		provisional_account = create_account(
+			account_name="Provision Account",
+			parent_account="Current Liabilities - _TC",
+			company="_Test Company",
+		)
+		company = frappe.get_doc("Company", "_Test Company")
+		company.enable_provisional_accounting_for_non_stock_items = 1
+		company.default_provisional_account = provisional_account
+		company.save()
+
+		# Step - 3: Create Non-Stock Item
+		item = make_item(properties={"is_stock_item": 0})
+
+		# Step - 4: Create Purchase Receipt
+		pr = make_purchase_receipt(
+			qty=2,
+			item_code=item.name,
+			company=company.name,
+			supplier=supplier.name,
+			currency=supplier.default_currency,
+		)
+
+		# Test - 1: Total and Base Total should not be the same as the currency is different
+		self.assertNotEqual(flt(pr.total, 2), flt(pr.base_total, 2))
+		self.assertEqual(flt(pr.total * pr.conversion_rate, 2), flt(pr.base_total, 2))
+
+		# Test - 2: Sum of Debit or Credit should be equal to Purchase Receipt Base Total
+		amount = frappe.db.get_value("GL Entry", {"docstatus": 1, "voucher_no": pr.name}, ["sum(debit)"])
+		expected_amount = pr.base_total
+		self.assertEqual(amount, expected_amount)
+
+		company.enable_provisional_accounting_for_non_stock_items = 0
+		company.save()
 
 
 def prepare_data_for_internal_transfer():

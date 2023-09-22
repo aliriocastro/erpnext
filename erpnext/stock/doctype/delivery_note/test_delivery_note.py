@@ -728,7 +728,7 @@ class TestDeliveryNote(FrappeTestCase):
 
 	def test_dn_billing_status_case1(self):
 		# SO -> DN -> SI
-		so = make_sales_order()
+		so = make_sales_order(po_no="12345")
 		dn = create_dn_against_so(so.name, delivered_qty=2)
 
 		self.assertEqual(dn.status, "To Bill")
@@ -755,7 +755,7 @@ class TestDeliveryNote(FrappeTestCase):
 			make_sales_invoice,
 		)
 
-		so = make_sales_order()
+		so = make_sales_order(po_no="12345")
 
 		si = make_sales_invoice(so.name)
 		si.get("items")[0].qty = 5
@@ -799,7 +799,7 @@ class TestDeliveryNote(FrappeTestCase):
 
 		frappe.db.set_value("Stock Settings", None, "allow_negative_stock", 1)
 
-		so = make_sales_order()
+		so = make_sales_order(po_no="12345")
 
 		dn1 = make_delivery_note(so.name)
 		dn1.get("items")[0].qty = 2
@@ -845,7 +845,7 @@ class TestDeliveryNote(FrappeTestCase):
 		from erpnext.accounts.doctype.sales_invoice.sales_invoice import make_delivery_note
 		from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
 
-		so = make_sales_order()
+		so = make_sales_order(po_no="12345")
 
 		si = make_sales_invoice(so.name)
 		si.submit()
@@ -1210,6 +1210,42 @@ class TestDeliveryNote(FrappeTestCase):
 		return_dn.save().submit()
 
 		self.assertTrue(return_dn.docstatus == 1)
+
+	def test_duplicate_serial_no_in_delivery_note(self):
+		# Step - 1: Create Serial Item
+		serial_item = make_item(
+			properties={
+				"is_stock_item": 1,
+				"has_serial_no": 1,
+				"serial_no_series": frappe.generate_hash("", 10) + ".###",
+			}
+		).name
+
+		# Step - 2: Inward Stock
+		se = make_stock_entry(item_code=serial_item, target="_Test Warehouse - _TC", qty=4)
+
+		# Step - 3: Create Delivery Note with Duplicare Serial Nos
+		serial_nos = se.items[0].serial_no.split("\n")
+		dn = create_delivery_note(
+			item_code=serial_item,
+			warehouse="_Test Warehouse - _TC",
+			qty=2,
+			do_not_save=True,
+		)
+		dn.items[0].serial_no = "\n".join(serial_nos[:2])
+		dn.append("items", dn.items[0].as_dict())
+
+		# Test - 1: ValidationError should be raised
+		self.assertRaises(frappe.ValidationError, dn.save)
+
+		# Step - 4: Submit Delivery Note with unique Serial Nos
+		dn.items[1].serial_no = "\n".join(serial_nos[2:])
+		dn.save()
+		dn.submit()
+
+	def tearDown(self):
+		frappe.db.rollback()
+		frappe.db.set_single_value("Selling Settings", "dont_reserve_sales_order_qty_on_sales_return", 0)
 
 
 def create_delivery_note(**args):
