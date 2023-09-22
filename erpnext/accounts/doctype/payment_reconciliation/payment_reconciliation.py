@@ -5,6 +5,7 @@
 import frappe
 from frappe import _, msgprint, qb
 from frappe.model.document import Document
+from frappe.query_builder import Criterion
 from frappe.query_builder.custom import ConstantColumn
 from frappe.utils import flt, fmt_money, get_link_to_form, getdate, nowdate, today
 
@@ -58,6 +59,9 @@ class PaymentReconciliation(Document):
 	def get_payment_entries(self):
 		order_doctype = "Sales Order" if self.party_type == "Customer" else "Purchase Order"
 		condition = self.get_conditions(get_payments=True)
+		if self.payment_name:
+			condition += "name like '%%{0}%%'".format(self.payment_name)
+
 		payment_entries = get_advance_payment_entries(
 			self.party_type,
 			self.party,
@@ -72,6 +76,9 @@ class PaymentReconciliation(Document):
 
 	def get_jv_entries(self):
 		condition = self.get_conditions()
+
+		if self.payment_name:
+			condition += f" and t1.name like '%%{self.payment_name}%%'"
 
 		if self.get("cost_center"):
 			condition += f" and t2.cost_center = '{self.cost_center}' "
@@ -93,7 +100,7 @@ class PaymentReconciliation(Document):
 				"Journal Entry" as reference_type, t1.name as reference_name,
 				t1.posting_date, t1.remark as remarks, t2.name as reference_row,
 				{dr_or_cr} as amount, t2.is_advance, t2.exchange_rate,
-				t2.account_currency as currency
+				t2.account_currency as currency, t2.cost_center as cost_center
 			from
 				`tabJournal Entry` t1, `tabJournal Entry Account` t2
 			where
@@ -130,6 +137,15 @@ class PaymentReconciliation(Document):
 	def get_return_invoices(self):
 		voucher_type = "Sales Invoice" if self.party_type == "Customer" else "Purchase Invoice"
 		doc = qb.DocType(voucher_type)
+
+		conditions = []
+		conditions.append(doc.docstatus == 1)
+		conditions.append(doc[frappe.scrub(self.party_type)] == self.party)
+		conditions.append(doc.is_return == 1)
+
+		if self.payment_name:
+			conditions.append(doc.name.like(f"%{self.payment_name}%"))
+
 		self.return_invoices = (
 			qb.from_(doc)
 			.select(
@@ -137,11 +153,7 @@ class PaymentReconciliation(Document):
 				doc.name.as_("voucher_no"),
 				doc.return_against,
 			)
-			.where(
-				(doc.docstatus == 1)
-				& (doc[frappe.scrub(self.party_type)] == self.party)
-				& (doc.is_return == 1)
-			)
+			.where(Criterion.all(conditions))
 			.run(as_dict=True)
 		)
 
@@ -184,6 +196,7 @@ class PaymentReconciliation(Document):
 								"amount": -(inv.outstanding_in_account_currency),
 								"posting_date": inv.posting_date,
 								"currency": inv.currency,
+								"cost_center": inv.cost_center,
 							}
 						)
 					)
@@ -210,6 +223,8 @@ class PaymentReconciliation(Document):
 			min_outstanding=self.minimum_invoice_amount if self.minimum_invoice_amount else None,
 			max_outstanding=self.maximum_invoice_amount if self.maximum_invoice_amount else None,
 			accounting_dimensions=self.accounting_dimension_filter_conditions,
+			limit=self.invoice_limit,
+			voucher_no=self.invoice_name,
 		)
 
 		cr_dr_notes = (
@@ -330,6 +345,7 @@ class PaymentReconciliation(Document):
 				"allocated_amount": allocated_amount,
 				"difference_amount": pay.get("difference_amount"),
 				"currency": inv.get("currency"),
+				"cost_center": pay.get("cost_center"),
 			}
 		)
 
@@ -404,6 +420,7 @@ class PaymentReconciliation(Document):
 				"allocated_amount": flt(row.get("allocated_amount")),
 				"difference_amount": flt(row.get("difference_amount")),
 				"difference_account": row.get("difference_account"),
+				"cost_center": row.get("cost_center"),
 			}
 		)
 
@@ -576,7 +593,7 @@ def reconcile_dr_cr_note(dr_cr_notes, company):
 						inv.dr_or_cr: abs(inv.allocated_amount),
 						"reference_type": inv.against_voucher_type,
 						"reference_name": inv.against_voucher,
-						"cost_center": erpnext.get_default_cost_center(company),
+						"cost_center": inv.cost_center or erpnext.get_default_cost_center(company),
 						"user_remark": f"{fmt_money(flt(inv.allocated_amount), currency=company_currency)} against {inv.against_voucher}",
 						"exchange_rate": inv.exchange_rate,
 					},
@@ -591,7 +608,7 @@ def reconcile_dr_cr_note(dr_cr_notes, company):
 						),
 						"reference_type": inv.voucher_type,
 						"reference_name": inv.voucher_no,
-						"cost_center": erpnext.get_default_cost_center(company),
+						"cost_center": inv.cost_center or erpnext.get_default_cost_center(company),
 						"user_remark": f"{fmt_money(flt(inv.allocated_amount), currency=company_currency)} from {inv.voucher_no}",
 						"exchange_rate": inv.exchange_rate,
 					},
@@ -617,6 +634,7 @@ def reconcile_dr_cr_note(dr_cr_notes, company):
 
 			create_gain_loss_journal(
 				company,
+				today(),
 				inv.party_type,
 				inv.party,
 				inv.account,
@@ -630,4 +648,5 @@ def reconcile_dr_cr_note(dr_cr_notes, company):
 				inv.against_voucher_type,
 				inv.against_voucher,
 				None,
+				inv.cost_center,
 			)
