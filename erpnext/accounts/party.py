@@ -402,15 +402,16 @@ def get_party_account(party_type, party=None, company=None):
 		)
 		account = frappe.get_cached_value("Company", company, default_account_name)
 
+	if account:
+		return account
+
 	existing_gle_currency = get_party_gle_currency(party_type, party, company)
 	if existing_gle_currency:
-		if account:
-			account_currency = frappe.db.get_value("Account", account, "account_currency", cache=True)
+		account_currency = frappe.db.get_value("Account", account, "account_currency", cache=True)
 		if (account and account_currency != existing_gle_currency) or not account:
 			account = get_party_gle_account(party_type, party, company)
 
 	return account
-
 
 @frappe.whitelist()
 def get_party_bank_account(party_type, party):
