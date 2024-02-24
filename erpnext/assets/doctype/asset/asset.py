@@ -10,6 +10,7 @@ from frappe import _
 from frappe.utils import (
 	add_days,
 	add_months,
+	add_years,
 	cint,
 	date_diff,
 	flt,
@@ -23,6 +24,7 @@ from frappe.utils import (
 
 import erpnext
 from erpnext.accounts.general_ledger import make_reverse_gl_entries
+from erpnext.accounts.utils import get_fiscal_year
 from erpnext.assets.doctype.asset.depreciation import (
 	get_depreciation_accounts,
 	get_disposal_account_and_cost_center,
@@ -61,6 +63,7 @@ class Asset(AccountsController):
 	def on_cancel(self):
 		self.validate_cancellation()
 		self.cancel_movement_entries()
+		self.cancel_capitalization()
 		self.delete_depreciation_entries()
 		self.set_status()
 		self.ignore_linked_doctypes = ("GL Entry", "Stock Ledger Entry")
@@ -380,13 +383,23 @@ class Asset(AccountsController):
 		should_get_last_day = is_last_day_of_the_month(finance_book.depreciation_start_date)
 
 		depreciation_amount = 0
-
 		number_of_pending_depreciations = final_number_of_depreciations - start[finance_book.idx - 1]
+		yearly_opening_wdv = value_after_depreciation
+		current_fiscal_year_end_date = None
 
 		for n in range(start[finance_book.idx - 1], final_number_of_depreciations):
 			# If depreciation is already completed (for double declining balance)
 			if skip_row:
 				continue
+
+			schedule_date = add_months(
+				finance_book.depreciation_start_date, n * cint(finance_book.frequency_of_depreciation)
+			)
+			if not current_fiscal_year_end_date:
+				current_fiscal_year_end_date = get_fiscal_year(finance_book.depreciation_start_date)[2]
+			elif getdate(schedule_date) > getdate(current_fiscal_year_end_date):
+				current_fiscal_year_end_date = add_years(current_fiscal_year_end_date, 1)
+				yearly_opening_wdv = value_after_depreciation
 
 			if n > 0 and len(self.get("schedules")) > n - 1:
 				prev_depreciation_amount = self.get("schedules")[n - 1].depreciation_amount
@@ -396,6 +409,7 @@ class Asset(AccountsController):
 			depreciation_amount = get_depreciation_amount(
 				self,
 				value_after_depreciation,
+				yearly_opening_wdv,
 				finance_book,
 				n,
 				prev_depreciation_amount,
@@ -493,17 +507,21 @@ class Asset(AccountsController):
 
 			if not depreciation_amount:
 				continue
-			value_after_depreciation -= flt(depreciation_amount, self.precision("gross_purchase_amount"))
+			value_after_depreciation = flt(
+				value_after_depreciation - flt(depreciation_amount),
+				self.precision("gross_purchase_amount"),
+			)
 
 			# Adjust depreciation amount in the last period based on the expected value after useful life
-			if finance_book.expected_value_after_useful_life and (
-				(
-					n == cint(final_number_of_depreciations) - 1
-					and value_after_depreciation != finance_book.expected_value_after_useful_life
-				)
-				or value_after_depreciation < finance_book.expected_value_after_useful_life
+			if (
+				n == cint(final_number_of_depreciations) - 1
+				and flt(value_after_depreciation) != flt(finance_book.expected_value_after_useful_life)
+			) or flt(value_after_depreciation) < flt(
+				finance_book.expected_value_after_useful_life
 			):
-				depreciation_amount += value_after_depreciation - finance_book.expected_value_after_useful_life
+				depreciation_amount += flt(value_after_depreciation) - flt(
+					finance_book.expected_value_after_useful_life
+				)
 				skip_row = True
 
 			if flt(depreciation_amount, self.precision("gross_purchase_amount")) > 0:
@@ -830,6 +848,16 @@ class Asset(AccountsController):
 		for movement in movements:
 			movement = frappe.get_doc("Asset Movement", movement.get("name"))
 			movement.cancel()
+
+	def cancel_capitalization(self):
+		asset_capitalization = frappe.db.get_value(
+			"Asset Capitalization",
+			{"target_asset": self.name, "docstatus": 1, "entry_type": "Capitalization"},
+		)
+
+		if asset_capitalization:
+			asset_capitalization = frappe.get_doc("Asset Capitalization", asset_capitalization)
+			asset_capitalization.cancel()
 
 	def delete_depreciation_entries(self):
 		if self.calculate_depreciation:
@@ -1351,6 +1379,8 @@ def is_cwip_accounting_enabled(asset_category):
 @frappe.whitelist()
 def get_asset_value_after_depreciation(asset_name, finance_book=None):
 	asset = frappe.get_doc("Asset", asset_name)
+	if not asset.calculate_depreciation:
+		return flt(asset.value_after_depreciation)
 
 	return asset.get_value_after_depreciation(finance_book)
 
@@ -1367,6 +1397,7 @@ def get_total_days(date, frequency):
 def get_depreciation_amount(
 	asset,
 	depreciable_value,
+	yearly_opening_wdv,
 	fb_row,
 	schedule_idx=0,
 	prev_depreciation_amount=0,
@@ -1384,6 +1415,7 @@ def get_depreciation_amount(
 			asset,
 			fb_row,
 			depreciable_value,
+			yearly_opening_wdv,
 			schedule_idx,
 			prev_depreciation_amount,
 			has_wdv_or_dd_non_yearly_pro_rata,
@@ -1529,6 +1561,7 @@ def get_wdv_or_dd_depr_amount(
 	asset,
 	fb_row,
 	depreciable_value,
+	yearly_opening_wdv,
 	schedule_idx,
 	prev_depreciation_amount,
 	has_wdv_or_dd_non_yearly_pro_rata,
