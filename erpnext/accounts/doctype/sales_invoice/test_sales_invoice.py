@@ -1081,6 +1081,44 @@ class TestSalesInvoice(FrappeTestCase):
 		self.assertEqual(pos.grand_total, 100.0)
 		self.assertEqual(pos.write_off_amount, 10)
 
+	def test_ledger_entries_of_return_pos_invoice(self):
+		make_pos_profile()
+
+		pos = create_sales_invoice(do_not_save=True)
+		pos.is_pos = 1
+		pos.append("payments", {"mode_of_payment": "Cash", "account": "Cash - _TC", "amount": 100})
+		pos.save().submit()
+		self.assertEqual(pos.outstanding_amount, 0.0)
+		self.assertEqual(pos.status, "Paid")
+
+		from erpnext.accounts.doctype.sales_invoice.sales_invoice import make_sales_return
+
+		pos_return = make_sales_return(pos.name)
+		pos_return.save().submit()
+		pos_return.reload()
+		pos.reload()
+		self.assertEqual(pos_return.is_return, 1)
+		self.assertEqual(pos_return.return_against, pos.name)
+		self.assertEqual(pos_return.outstanding_amount, 0.0)
+		self.assertEqual(pos_return.status, "Return")
+		self.assertEqual(pos.outstanding_amount, 0.0)
+		self.assertEqual(pos.status, "Credit Note Issued")
+
+		expected = (
+			("Cash - _TC", 0.0, 100.0, pos_return.name, None),
+			("Debtors - _TC", 0.0, 100.0, pos_return.name, pos_return.name),
+			("Debtors - _TC", 100.0, 0.0, pos_return.name, pos_return.name),
+			("Sales - _TC", 100.0, 0.0, pos_return.name, None),
+		)
+		res = frappe.db.get_all(
+			"GL Entry",
+			filters={"voucher_no": pos_return.name, "is_cancelled": 0},
+			fields=["account", "debit", "credit", "voucher_no", "against_voucher"],
+			order_by="account, debit, credit",
+			as_list=1,
+		)
+		self.assertEqual(expected, res)
+
 	def test_pos_with_no_gl_entry_for_change_amount(self):
 		frappe.db.set_value("Accounts Settings", None, "post_change_gl_entries", 0)
 
@@ -1530,6 +1568,12 @@ class TestSalesInvoice(FrappeTestCase):
 		# Check outstanding amount
 		self.assertEqual(frappe.db.get_value("Sales Invoice", si1.name, "outstanding_amount"), -1000)
 		self.assertEqual(frappe.db.get_value("Sales Invoice", si.name, "outstanding_amount"), 2500)
+
+	def test_zero_qty_return_invoice_with_stock_effect(self):
+		cr_note = create_sales_invoice(qty=-1, rate=300, is_return=1, do_not_submit=True)
+		cr_note.update_stock = True
+		cr_note.items[0].qty = 0
+		self.assertRaises(frappe.ValidationError, cr_note.save)
 
 	def test_return_invoice_with_account_mismatch(self):
 		debtors2 = create_account(
