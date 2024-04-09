@@ -1086,6 +1086,69 @@ class SalesInvoice(SellingController):
 				)
 			)
 
+	def make_tax_account_receivable_gl_entries(self, gl_entries, tax, base_amount, account_currency, amount):
+		# Credit Receivable Account
+		# We credit the receivable account to attach to another account.
+		account = frappe.get_cached_doc("Account", tax.account_head)
+		if account.account_type == "Tax":
+			tax_account_receivable_name = frappe.db.get_value("Account", tax.account_head, "custom_tax_account_receivable")
+			tax_account_receivable = frappe.get_cached_doc("Account", tax_account_receivable_name)
+
+			if tax_account_receivable:
+				# Posting Tax Account Receivable
+				gl_entries.append(
+					self.get_gl_dict(
+						{
+							"account": tax_account_receivable,
+							"party_type": "Customer",
+							"party": self.customer,
+							"due_date": self.due_date,
+							"against": tax.account_head,
+							"debit": flt(base_amount, tax.precision("tax_amount_after_discount_amount")),
+							"debit_in_account_currency": (
+								flt(base_amount, tax.precision("base_tax_amount_after_discount_amount"))
+								if account_currency == self.company_currency
+								else flt(amount, tax.precision("tax_amount_after_discount_amount"))
+							),
+							"against_voucher": against_voucher,
+							"against_voucher_type": self.doctype,
+							"cost_center": self.cost_center,
+							"project": self.project,
+						},
+						tax_account_receivable.account_currency,
+						item=self,
+					)
+				)
+
+				# Credit to Customer Account Receivable
+				against_voucher = self.name
+				if self.is_return and self.return_against and not self.update_outstanding_for_self:
+					against_voucher = self.return_against
+
+				gl_entries.append(
+					self.get_gl_dict(
+						{
+							"account": self.debit_to,
+							"party_type": "Customer",
+							"party": self.customer,
+							"due_date": self.due_date,
+							"against": self.against_income_account,
+							"credit": flt(base_amount, tax.precision("tax_amount_after_discount_amount")),
+							"credit_in_account_currency": (
+								flt(base_amount, tax.precision("base_tax_amount_after_discount_amount"))
+								if account_currency == self.company_currency
+								else flt(amount, tax.precision("tax_amount_after_discount_amount"))
+							),
+							"against_voucher": against_voucher,
+							"against_voucher_type": self.doctype,
+							"cost_center": self.cost_center,
+							"project": self.project,
+						},
+						self.party_account_currency,
+						item=self,
+					)
+				)
+
 	def make_tax_gl_entries(self, gl_entries):
 		enable_discount_accounting = cint(
 			frappe.db.get_single_value("Selling Settings", "enable_discount_accounting")
@@ -1113,6 +1176,8 @@ class SalesInvoice(SellingController):
 						item=tax,
 					)
 				)
+
+				self.make_tax_account_receivable_gl_entries(gl_entries, tax, base_amount, account_currency, amount)
 
 	def make_internal_transfer_gl_entries(self, gl_entries):
 		if self.is_internal_transfer() and flt(self.base_total_taxes_and_charges):
