@@ -1104,7 +1104,7 @@ class SalesInvoice(SellingController):
 				gl_entries.append(
 					self.get_gl_dict(
 						{
-							"account": tax_account_receivable,
+							"account": tax_account_receivable_name,
 							"party_type": "Customer",
 							"party": self.customer,
 							"due_date": self.due_date,
