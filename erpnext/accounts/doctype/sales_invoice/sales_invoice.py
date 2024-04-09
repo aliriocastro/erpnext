@@ -1109,12 +1109,8 @@ class SalesInvoice(SellingController):
 							"party": self.customer,
 							"due_date": self.due_date,
 							"against": tax.account_head,
-							"debit": flt(base_amount, tax.precision("tax_amount_after_discount_amount")),
-							"debit_in_account_currency": (
-								flt(base_amount, tax.precision("base_tax_amount_after_discount_amount"))
-								if account_currency == self.company_currency
-								else flt(amount, tax.precision("tax_amount_after_discount_amount"))
-							),
+							"debit": flt(base_amount, tax.precision("base_tax_amount_after_discount_amount")),
+							"debit_in_account_currency": flt(base_amount, tax.precision("base_tax_amount_after_discount_amount")),
 							"against_voucher": against_voucher,
 							"against_voucher_type": self.doctype,
 							"cost_center": self.cost_center,
@@ -1136,7 +1132,7 @@ class SalesInvoice(SellingController):
 							"credit": flt(base_amount, tax.precision("tax_amount_after_discount_amount")),
 							"credit_in_account_currency": (
 								flt(base_amount, tax.precision("base_tax_amount_after_discount_amount"))
-								if account_currency == self.company_currency
+								if self.party_account_currency == self.company_currency
 								else flt(amount, tax.precision("tax_amount_after_discount_amount"))
 							),
 							"against_voucher": against_voucher,
