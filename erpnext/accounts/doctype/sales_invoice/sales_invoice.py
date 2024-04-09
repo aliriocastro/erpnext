@@ -1095,6 +1095,11 @@ class SalesInvoice(SellingController):
 			tax_account_receivable = frappe.get_cached_doc("Account", tax_account_receivable_name)
 
 			if tax_account_receivable:
+				# Credit to Customer Account Receivable
+				against_voucher = self.name
+				if self.is_return and self.return_against and not self.update_outstanding_for_self:
+					against_voucher = self.return_against
+
 				# Posting Tax Account Receivable
 				gl_entries.append(
 					self.get_gl_dict(
@@ -1119,11 +1124,6 @@ class SalesInvoice(SellingController):
 						item=self,
 					)
 				)
-
-				# Credit to Customer Account Receivable
-				against_voucher = self.name
-				if self.is_return and self.return_against and not self.update_outstanding_for_self:
-					against_voucher = self.return_against
 
 				gl_entries.append(
 					self.get_gl_dict(
