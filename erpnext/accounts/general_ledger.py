@@ -242,14 +242,20 @@ def merge_similar_entries(gl_map, precision=None):
 		# to that entry
 		same_head = check_if_in_list(entry, merged_gl_map)
 		if same_head:
-			same_head.debit = flt(same_head.debit) + flt(entry.debit)
-			same_head.debit_in_account_currency = flt(same_head.debit_in_account_currency) + flt(
-				entry.debit_in_account_currency
-			)
-			same_head.credit = flt(same_head.credit) + flt(entry.credit)
-			same_head.credit_in_account_currency = flt(same_head.credit_in_account_currency) + flt(
-				entry.credit_in_account_currency
-			)
+			same_head_has_debits = (same_head.debit > 0)
+			same_head_has_credits = (same_head.credit > 0)
+
+			if entry.debit > 0 and not same_head_has_credits:
+				same_head.debit = flt(same_head.debit) + flt(entry.debit)
+				same_head.debit_in_account_currency = flt(same_head.debit_in_account_currency) + flt(
+					entry.debit_in_account_currency
+				)
+			elif entry.credit > 0 and not same_head_has_debits:
+				same_head.credit = flt(same_head.credit) + flt(entry.credit)
+				same_head.credit_in_account_currency = flt(same_head.credit_in_account_currency) + flt(
+					entry.credit_in_account_currency
+				)
+			else: merged_gl_map.append(entry)
 		else:
 			merged_gl_map.append(entry)
 
