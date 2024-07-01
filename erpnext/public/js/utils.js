@@ -397,7 +397,10 @@ $.extend(erpnext.utils, {
 		}
 	},
 
-	get_fiscal_year: function (date) {
+	get_fiscal_year: function (date, with_dates = false, boolean = false) {
+		if (!frappe.boot.setup_complete) {
+			return;
+		}
 		if (!date) {
 			date = frappe.datetime.get_today();
 		}
@@ -407,11 +410,13 @@ $.extend(erpnext.utils, {
 			method: "erpnext.accounts.utils.get_fiscal_year",
 			args: {
 				date: date,
+				boolean: boolean,
 			},
 			async: false,
 			callback: function (r) {
 				if (r.message) {
-					fiscal_year = r.message[0];
+					if (with_dates) fiscal_year = r.message;
+					else fiscal_year = r.message[0];
 				}
 			},
 		});
@@ -819,12 +824,15 @@ erpnext.utils.map_current_doc = function (opts) {
 
 	if (opts.source_doctype) {
 		let data_fields = [];
-		if (opts.source_doctype == "Purchase Receipt") {
-			data_fields.push({
-				fieldname: "merge_taxes",
-				fieldtype: "Check",
-				label: __("Merge taxes from multiple documents"),
-			});
+		if (["Purchase Receipt", "Delivery Note"].includes(opts.source_doctype)) {
+			let target_meta = frappe.get_meta(cur_frm.doc.doctype);
+			if (target_meta.fields.find((f) => f.fieldname === "taxes")) {
+				data_fields.push({
+					fieldname: "merge_taxes",
+					fieldtype: "Check",
+					label: __("Merge taxes from multiple documents"),
+				});
+			}
 		}
 		const d = new frappe.ui.form.MultiSelectDialog({
 			doctype: opts.source_doctype,
@@ -845,7 +853,10 @@ erpnext.utils.map_current_doc = function (opts) {
 					return;
 				}
 				opts.source_name = values;
-				if (opts.allow_child_item_selection || opts.source_doctype == "Purchase Receipt") {
+				if (
+					opts.allow_child_item_selection ||
+					["Purchase Receipt", "Delivery Note"].includes(opts.source_doctype)
+				) {
 					// args contains filtered child docnames
 					opts.args = args;
 				}

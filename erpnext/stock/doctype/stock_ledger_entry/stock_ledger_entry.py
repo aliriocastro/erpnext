@@ -222,7 +222,9 @@ class StockLedgerEntry(Document):
 			)
 			if older_than_x_days_ago and stock_settings.stock_auth_role not in frappe.get_roles():
 				frappe.throw(
-					_("Not allowed to update stock transactions older than {0}").format(stock_frozen_upto_days),
+					_("Not allowed to update stock transactions older than {0}").format(
+						stock_frozen_upto_days
+					),
 					StockFreezeError,
 				)
 
@@ -234,16 +236,12 @@ class StockLedgerEntry(Document):
 		allow_expired_batches = frappe.db.get_value('Stock Settings', None, 'allow_expired_batches')
 
 		if not allow_expired_batches:
-			if self.batch_no and self.voucher_type != "Stock Entry":
-				if (self.voucher_type in ["Purchase Receipt", "Purchase Invoice"] and self.actual_qty < 0) or (
-					self.voucher_type in ["Delivery Note", "Sales Invoice"] and self.actual_qty > 0
-				):
-					return
-
-				expiry_date = frappe.db.get_value("Batch", self.batch_no, "expiry_date")
-				if expiry_date:
-					if getdate(self.posting_date) > getdate(expiry_date):
-						frappe.throw(_("Batch {0} of Item {1} has expired.").format(self.batch_no, self.item_code))
+			expiry_date = frappe.db.get_value("Batch", self.batch_no, "expiry_date")
+			if expiry_date:
+				if getdate(self.posting_date) > getdate(expiry_date):
+					frappe.throw(
+						_("Batch {0} of Item {1} has expired.").format(self.batch_no, self.item_code)
+					)
 
 	def validate_and_set_fiscal_year(self):
 		if not self.fiscal_year:
@@ -276,7 +274,7 @@ class StockLedgerEntry(Document):
 					(self.item_code, self.warehouse),
 				)[0][0]
 
-				cur_doc_posting_datetime = "%s %s" % (
+				cur_doc_posting_datetime = "{} {}".format(
 					self.posting_date,
 					self.get("posting_time") or "00:00:00",
 				)
@@ -285,7 +283,9 @@ class StockLedgerEntry(Document):
 					last_transaction_time
 				):
 					msg = _("Last Stock Transaction for item {0} under warehouse {1} was on {2}.").format(
-						frappe.bold(self.item_code), frappe.bold(self.warehouse), frappe.bold(last_transaction_time)
+						frappe.bold(self.item_code),
+						frappe.bold(self.warehouse),
+						frappe.bold(last_transaction_time),
 					)
 
 					msg += "<br><br>" + _(

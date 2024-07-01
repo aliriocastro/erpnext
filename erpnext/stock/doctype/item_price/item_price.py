@@ -46,7 +46,7 @@ class ItemPrice(Document):
 
 			if not price_list_details:
 				link = frappe.utils.get_link_to_form("Price List", self.price_list)
-				frappe.throw("The price list {0} does not exist or is disabled".format(link))
+				frappe.throw(f"The price list {link} does not exist or is disabled")
 
 			self.buying, self.selling, self.currency = price_list_details
 
@@ -63,7 +63,6 @@ class ItemPrice(Document):
 			frappe.throw(_(msg))
 
 	def check_duplicates(self):
-
 		item_price = frappe.qb.DocType("Item Price")
 
 		query = (

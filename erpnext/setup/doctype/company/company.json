@@ -726,7 +726,7 @@
  "image_field": "company_logo",
  "is_tree": 1,
  "links": [],
- "modified": "2024-02-23 22:49:27.408547",
+ "modified": "2024-05-27 17:32:49.057386",
  "modified_by": "Administrator",
  "module": "Setup",
  "name": "Company",
@@ -782,6 +782,10 @@
    "role": "Accounts Manager",
    "share": 1,
    "write": 1
+  },
+  {
+   "role": "Auditor",
+   "select": 1
   }
  ],
  "show_name_in_global_search": 1,
