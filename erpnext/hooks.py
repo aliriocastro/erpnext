@@ -354,7 +354,6 @@ doc_events = {
 	"Payment Entry": {
 		"on_submit": [
 			"erpnext.regional.create_transaction_log",
-			"erpnext.accounts.doctype.payment_request.payment_request.update_payment_req_status",
 			"erpnext.accounts.doctype.dunning.dunning.resolve_dunning",
 		],
 		"on_trash": "erpnext.regional.check_deletion_permission",
@@ -464,6 +463,7 @@ scheduler_events = {
 	"monthly_long": [
 		"erpnext.accounts.deferred_revenue.process_deferred_accounting",
 		"erpnext.loan_management.doctype.process_loan_interest_accrual.process_loan_interest_accrual.process_loan_interest_accrual_for_demand_loans",
+		"erpnext.accounts.utils.auto_create_exchange_rate_revaluation_monthly",
 	],
 }
 

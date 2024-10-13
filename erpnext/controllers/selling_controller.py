@@ -31,7 +31,7 @@ class SellingController(StockController):
 	def validate(self):
 		super().validate()
 		self.validate_items()
-		if not self.get("is_debit_note"):
+		if not (self.get("is_debit_note") or self.get("is_return")):
 			self.validate_max_discount()
 		self.validate_selling_price()
 		self.set_qty_as_per_stock_uom()
@@ -591,7 +591,7 @@ class SellingController(StockController):
 		if self.doctype in ["Sales Order", "Quotation"]:
 			for item in self.items:
 				item.gross_profit = flt(
-					((item.base_rate - flt(item.valuation_rate)) * item.stock_qty),
+					((flt(item.stock_uom_rate) - flt(item.valuation_rate)) * item.stock_qty),
 					self.precision("amount", item),
 				)
 

@@ -342,7 +342,7 @@ def get_columns(additional_table_columns, filters):
 
 
 def apply_conditions(query, si, sii, filters, additional_conditions=None):
-	for opts in ("company", "customer", "item_code"):
+	for opts in ("company", "customer"):
 		if filters.get(opts):
 			query = query.where(si[opts] == filters[opts])
 
@@ -370,6 +370,9 @@ def apply_conditions(query, si, sii, filters, additional_conditions=None):
 
 	if filters.get("brand"):
 		query = query.where(sii.brand == filters.get("brand"))
+
+	if filters.get("item_code"):
+		query = query.where(sii.item_code == filters.get("item_code"))
 
 	if filters.get("item_group"):
 		query = query.where(sii.item_group == filters.get("item_group"))
@@ -407,8 +410,9 @@ def apply_group_by_conditions(query, si, ii, filters):
 
 
 def get_items(filters, additional_query_columns, additional_conditions=None):
-	si = frappe.qb.DocType("Sales Invoice")
-	sii = frappe.qb.DocType("Sales Invoice Item")
+	doctype = "Sales Invoice"
+	si = frappe.qb.DocType(doctype)
+	sii = frappe.qb.DocType(f"{doctype} Item")
 	item = frappe.qb.DocType("Item")
 
 	query = (
@@ -456,6 +460,7 @@ def get_items(filters, additional_query_columns, additional_conditions=None):
 			sii.qty,
 		)
 		.where(si.docstatus == 1)
+		.where(sii.parenttype == doctype)
 	)
 
 	if additional_query_columns:

@@ -369,6 +369,21 @@ class PurchaseInvoice(BuyingController):
 						item.expense_account = stock_not_billed_account
 			elif item.is_fixed_asset:
 				account = None
+				if not item.pr_detail and item.po_detail:
+					receipt_item = frappe.get_cached_value(
+						"Purchase Receipt Item",
+						{
+							"purchase_order": item.purchase_order,
+							"purchase_order_item": item.po_detail,
+							"docstatus": 1,
+						},
+						["name", "parent"],
+						as_dict=1,
+					)
+					if receipt_item:
+						item.pr_detail = receipt_item.name
+						item.purchase_receipt = receipt_item.parent
+
 				if item.pr_detail:
 					if not self.asset_received_but_not_billed:
 						self.asset_received_but_not_billed = self.get_company_default(
@@ -590,17 +605,17 @@ class PurchaseInvoice(BuyingController):
 		self.process_common_party_accounting()
 
 	def on_update_after_submit(self):
-		if hasattr(self, "repost_required"):
-			fields_to_check = [
-				"cash_bank_account",
-				"write_off_account",
-				"unrealized_profit_loss_account",
-			]
-			child_tables = {"items": ("expense_account",), "taxes": ("account_head",)}
-			self.needs_repost = self.check_if_fields_updated(fields_to_check, child_tables)
-			if self.needs_repost:
-				self.validate_for_repost()
-				self.db_set("repost_required", self.needs_repost)
+		fields_to_check = [
+			"cash_bank_account",
+			"write_off_account",
+			"unrealized_profit_loss_account",
+			"is_opening",
+		]
+		child_tables = {"items": ("expense_account",), "taxes": ("account_head",)}
+		self.needs_repost = self.check_if_fields_updated(fields_to_check, child_tables)
+		if self.needs_repost:
+			self.validate_for_repost()
+			self.repost_accounting_entries()
 
 	def make_gl_entries(self, gl_entries=None, from_repost=False):
 		update_outstanding = "No" if (cint(self.is_paid) or self.write_off_account) else "Yes"
@@ -1498,6 +1513,9 @@ class PurchaseInvoice(BuyingController):
 		self.db_set("release_date", None)
 
 	def set_tax_withholding(self):
+		self.set("advance_tax", [])
+		self.set("tax_withheld_vouchers", [])
+
 		if not self.apply_tds:
 			return
 
@@ -1539,8 +1557,6 @@ class PurchaseInvoice(BuyingController):
 			self.remove(d)
 
 		## Add pending vouchers on which tax was withheld
-		self.set("tax_withheld_vouchers", [])
-
 		for voucher_no, voucher_details in voucher_wise_amount.items():
 			self.append(
 				"tax_withheld_vouchers",
@@ -1555,7 +1571,6 @@ class PurchaseInvoice(BuyingController):
 		self.calculate_taxes_and_totals()
 
 	def allocate_advance_tds(self, tax_withholding_details, advance_taxes):
-		self.set("advance_tax", [])
 		for tax in advance_taxes:
 			allocated_amount = 0
 			pending_amount = flt(tax.tax_amount - tax.allocated_amount)

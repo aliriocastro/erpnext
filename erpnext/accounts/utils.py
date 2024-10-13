@@ -703,40 +703,114 @@ def cancel_exchange_gain_loss_journal(
 	Cancel Exchange Gain/Loss for Sales/Purchase Invoice, if they have any.
 	"""
 	if parent_doc.doctype in ["Sales Invoice", "Purchase Invoice", "Payment Entry", "Journal Entry"]:
-		journals = frappe.db.get_all(
-			"Journal Entry Account",
-			filters={
-				"reference_type": parent_doc.doctype,
-				"reference_name": parent_doc.name,
-				"docstatus": 1,
-			},
-			fields=["parent"],
-			as_list=1,
+		gain_loss_journals = get_linked_exchange_gain_loss_journal(
+			referenced_dt=parent_doc.doctype, referenced_dn=parent_doc.name, je_docstatus=1
 		)
-
-		if journals:
-			gain_loss_journals = frappe.db.get_all(
-				"Journal Entry",
-				filters={
-					"name": ["in", [x[0] for x in journals]],
-					"voucher_type": "Exchange Gain Or Loss",
-					"docstatus": 1,
-				},
-				as_list=1,
-			)
-			for doc in gain_loss_journals:
-				gain_loss_je = frappe.get_doc("Journal Entry", doc[0])
-				if referenced_dt and referenced_dn:
-					references = [(x.reference_type, x.reference_name) for x in gain_loss_je.accounts]
-					if (
-						len(references) == 2
-						and (referenced_dt, referenced_dn) in references
-						and (parent_doc.doctype, parent_doc.name) in references
-					):
-						# only cancel JE generated against parent_doc and referenced_dn
-						gain_loss_je.cancel()
-				else:
+		for doc in gain_loss_journals:
+			gain_loss_je = frappe.get_doc("Journal Entry", doc)
+			if referenced_dt and referenced_dn:
+				references = [(x.reference_type, x.reference_name) for x in gain_loss_je.accounts]
+				if (
+					len(references) == 2
+					and (referenced_dt, referenced_dn) in references
+					and (parent_doc.doctype, parent_doc.name) in references
+				):
+					# only cancel JE generated against parent_doc and referenced_dn
 					gain_loss_je.cancel()
+			else:
+				gain_loss_je.cancel()
+
+
+def delete_exchange_gain_loss_journal(
+	parent_doc: dict | object, referenced_dt: str | None = None, referenced_dn: str | None = None
+) -> None:
+	"""
+	Delete Exchange Gain/Loss for Sales/Purchase Invoice, if they have any.
+	"""
+	if parent_doc.doctype in ["Sales Invoice", "Purchase Invoice", "Payment Entry", "Journal Entry"]:
+		gain_loss_journals = get_linked_exchange_gain_loss_journal(
+			referenced_dt=parent_doc.doctype, referenced_dn=parent_doc.name, je_docstatus=2
+		)
+		for doc in gain_loss_journals:
+			gain_loss_je = frappe.get_doc("Journal Entry", doc)
+			if referenced_dt and referenced_dn:
+				references = [(x.reference_type, x.reference_name) for x in gain_loss_je.accounts]
+				if (
+					len(references) == 2
+					and (referenced_dt, referenced_dn) in references
+					and (parent_doc.doctype, parent_doc.name) in references
+				):
+					# only delete JE generated against parent_doc and referenced_dn
+					gain_loss_je.delete()
+			else:
+				gain_loss_je.delete()
+
+
+def get_linked_exchange_gain_loss_journal(referenced_dt: str, referenced_dn: str, je_docstatus: int) -> list:
+	"""
+	Get all the linked exchange gain/loss journal entries for a given document.
+	"""
+	gain_loss_journals = []
+	if journals := frappe.db.get_all(
+		"Journal Entry Account",
+		{
+			"reference_type": referenced_dt,
+			"reference_name": referenced_dn,
+			"docstatus": je_docstatus,
+		},
+		pluck="parent",
+	):
+		gain_loss_journals = frappe.db.get_all(
+			"Journal Entry",
+			{
+				"name": ["in", journals],
+				"voucher_type": "Exchange Gain Or Loss",
+				"is_system_generated": 1,
+				"docstatus": je_docstatus,
+			},
+			pluck="name",
+		)
+	return gain_loss_journals
+
+
+def cancel_common_party_journal(self):
+	if self.doctype not in ["Sales Invoice", "Purchase Invoice"]:
+		return
+
+	if not frappe.db.get_single_value("Accounts Settings", "enable_common_party_accounting"):
+		return
+
+	party_link = self.get_common_party_link()
+	if not party_link:
+		return
+
+	journal_entry = frappe.db.get_value(
+		"Journal Entry Account",
+		filters={
+			"reference_type": self.doctype,
+			"reference_name": self.name,
+			"docstatus": 1,
+		},
+		fieldname="parent",
+	)
+
+	if not journal_entry:
+		return
+
+	common_party_journal = frappe.db.get_value(
+		"Journal Entry",
+		filters={
+			"name": journal_entry,
+			"is_system_generated": True,
+			"docstatus": 1,
+		},
+	)
+
+	if not common_party_journal:
+		return
+
+	common_party_je = frappe.get_doc("Journal Entry", common_party_journal)
+	common_party_je.cancel()
 
 
 def update_accounting_ledgers_after_reference_removal(
@@ -1566,6 +1640,18 @@ def auto_create_exchange_rate_revaluation_weekly() -> None:
 	companies = frappe.db.get_all(
 		"Company",
 		filters={"auto_exchange_rate_revaluation": 1, "auto_err_frequency": "Weekly"},
+		fields=["name", "submit_err_jv"],
+	)
+	create_err_and_its_journals(companies)
+
+
+def auto_create_exchange_rate_revaluation_monthly() -> None:
+	"""
+	Executed by background job
+	"""
+	companies = frappe.db.get_all(
+		"Company",
+		filters={"auto_exchange_rate_revaluation": 1, "auto_err_frequency": "Montly"},
 		fields=["name", "submit_err_jv"],
 	)
 	create_err_and_its_journals(companies)

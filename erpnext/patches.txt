@@ -271,6 +271,7 @@ erpnext.patches.v13_0.create_accounting_dimensions_for_asset_repair
 erpnext.patches.v14_0.update_reference_due_date_in_journal_entry
 erpnext.patches.v14_0.france_depreciation_warning
 erpnext.patches.v14_0.clear_reconciliation_values_from_singles
+erpnext.patches.v14_0.update_proprietorship_to_individual
 
 [post_model_sync]
 execute:frappe.delete_doc_if_exists('Workspace', 'ERPNext Integrations Settings')
@@ -356,6 +357,7 @@ erpnext.patches.v14_0.clear_reconciliation_values_from_singles
 erpnext.patches.v14_0.update_total_asset_cost_field
 erpnext.patches.v14_0.create_accounting_dimensions_in_reconciliation_tool
 erpnext.patches.v14_0.update_flag_for_return_invoices #2024-03-22
+erpnext.patches.v14_0.update_pos_return_ledger_entries #2024-08-16
 # below migration patch should always run last
 erpnext.patches.v14_0.migrate_gl_to_payment_ledger
 erpnext.stock.doctype.delivery_note.patches.drop_unused_return_against_index # 2023-12-20
@@ -364,3 +366,4 @@ execute:frappe.db.set_single_value('E Commerce Settings', 'show_actual_qty', 1)
 erpnext.patches.v14_0.delete_orphaned_asset_movement_item_records
 erpnext.patches.v14_0.remove_cancelled_asset_capitalization_from_asset
 erpnext.patches.v14_0.enable_set_priority_for_pricing_rules #1
+erpnext.patches.v14_0.update_currency_exchange_settings_for_frankfurter

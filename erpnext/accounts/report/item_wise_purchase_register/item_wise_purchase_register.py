@@ -289,7 +289,7 @@ def get_columns(additional_table_columns, filters):
 
 
 def apply_conditions(query, pi, pii, filters):
-	for opts in ("company", "supplier", "item_code", "mode_of_payment"):
+	for opts in ("company", "supplier", "mode_of_payment"):
 		if filters.get(opts):
 			query = query.where(pi[opts] == filters[opts])
 
@@ -299,6 +299,9 @@ def apply_conditions(query, pi, pii, filters):
 	if filters.get("to_date"):
 		query = query.where(pi.posting_date <= filters.get("to_date"))
 
+	if filters.get("item_code"):
+		query = query.where(pii.item_code == filters.get("item_code"))
+
 	if filters.get("item_group"):
 		query = query.where(pii.item_group == filters.get("item_group"))
 
@@ -306,14 +309,15 @@ def apply_conditions(query, pi, pii, filters):
 		query = query.orderby(pi.posting_date, order=Order.desc)
 		query = query.orderby(pii.item_group, order=Order.desc)
 	else:
-		query = apply_group_by_conditions(filters, "Purchase Invoice")
+		query = apply_group_by_conditions(query, pi, pii, filters)
 
 	return query
 
 
 def get_items(filters, additional_table_columns):
-	pi = frappe.qb.DocType("Purchase Invoice")
-	pii = frappe.qb.DocType("Purchase Invoice Item")
+	doctype = "Purchase Invoice"
+	pi = frappe.qb.DocType(doctype)
+	pii = frappe.qb.DocType(f"{doctype} Item")
 	Item = frappe.qb.DocType("Item")
 	query = (
 		frappe.qb.from_(pi)
@@ -350,6 +354,7 @@ def get_items(filters, additional_table_columns):
 			pi.mode_of_payment,
 		)
 		.where(pi.docstatus == 1)
+		.where(pii.parenttype == doctype)
 	)
 
 	if filters.get("supplier"):

@@ -5,6 +5,7 @@ import copy
 import json
 
 import frappe
+from frappe import qb
 from frappe.model.dynamic_links import get_dynamic_link_map
 from frappe.model.naming import make_autoname
 from frappe.tests.utils import FrappeTestCase, change_settings
@@ -306,7 +307,8 @@ class TestSalesInvoice(FrappeTestCase):
 		si.insert()
 
 		# with inclusive tax
-		self.assertEqual(si.items[0].net_amount, 3947.368421052631)
+		self.assertEqual(si.items[0].net_amount, 3947.37)
+		self.assertEqual(si.net_total, si.base_net_total)
 		self.assertEqual(si.net_total, 3947.37)
 		self.assertEqual(si.grand_total, 5000)
 
@@ -413,8 +415,8 @@ class TestSalesInvoice(FrappeTestCase):
 			for i, k in enumerate(expected_values["keys"]):
 				self.assertEqual(d.get(k), expected_values[d.account_head][i])
 
-		self.assertEqual(si.base_grand_total, 1500)
-		self.assertEqual(si.grand_total, 1500)
+		self.assertEqual(si.base_grand_total, 1500.01)
+		self.assertEqual(si.grand_total, 1500.01)
 		self.assertEqual(si.rounding_adjustment, -0.01)
 
 	def test_discount_amount_gl_entry(self):
@@ -650,7 +652,7 @@ class TestSalesInvoice(FrappeTestCase):
 				62.5,
 				625.0,
 				50,
-				499.97600115194473,
+				499.98,
 			],
 			"_Test Item Home Desktop 200": [
 				190.66,
@@ -661,7 +663,7 @@ class TestSalesInvoice(FrappeTestCase):
 				190.66,
 				953.3,
 				150,
-				749.9968530500239,
+				750,
 			],
 		}
 
@@ -674,20 +676,21 @@ class TestSalesInvoice(FrappeTestCase):
 				self.assertEqual(d.get(k), expected_values[d.item_code][i])
 
 		# check net total
-		self.assertEqual(si.net_total, 1249.97)
+		self.assertEqual(si.base_net_total, si.net_total)
+		self.assertEqual(si.net_total, 1249.98)
 		self.assertEqual(si.total, 1578.3)
 
 		# check tax calculation
 		expected_values = {
 			"keys": ["tax_amount", "total"],
-			"_Test Account Excise Duty - _TC": [140, 1389.97],
-			"_Test Account Education Cess - _TC": [2.8, 1392.77],
-			"_Test Account S&H Education Cess - _TC": [1.4, 1394.17],
-			"_Test Account CST - _TC": [27.88, 1422.05],
-			"_Test Account VAT - _TC": [156.25, 1578.30],
-			"_Test Account Customs Duty - _TC": [125, 1703.30],
-			"_Test Account Shipping Charges - _TC": [100, 1803.30],
-			"_Test Account Discount - _TC": [-180.33, 1622.97],
+			"_Test Account Excise Duty - _TC": [140, 1389.98],
+			"_Test Account Education Cess - _TC": [2.8, 1392.78],
+			"_Test Account S&H Education Cess - _TC": [1.4, 1394.18],
+			"_Test Account CST - _TC": [27.88, 1422.06],
+			"_Test Account VAT - _TC": [156.25, 1578.31],
+			"_Test Account Customs Duty - _TC": [125, 1703.31],
+			"_Test Account Shipping Charges - _TC": [100, 1803.31],
+			"_Test Account Discount - _TC": [-180.33, 1622.98],
 		}
 
 		for d in si.get("taxes"):
@@ -723,7 +726,7 @@ class TestSalesInvoice(FrappeTestCase):
 				"base_rate": 2500,
 				"base_amount": 25000,
 				"net_rate": 40,
-				"net_amount": 399.9808009215558,
+				"net_amount": 399.98,
 				"base_net_rate": 2000,
 				"base_net_amount": 19999,
 			},
@@ -737,7 +740,7 @@ class TestSalesInvoice(FrappeTestCase):
 				"base_rate": 7500,
 				"base_amount": 37500,
 				"net_rate": 118.01,
-				"net_amount": 590.0531205155963,
+				"net_amount": 590.05,
 				"base_net_rate": 5900.5,
 				"base_net_amount": 29502.5,
 			},
@@ -775,8 +778,13 @@ class TestSalesInvoice(FrappeTestCase):
 
 		self.assertEqual(si.base_grand_total, 60795)
 		self.assertEqual(si.grand_total, 1215.90)
-		self.assertEqual(si.rounding_adjustment, 0.01)
-		self.assertEqual(si.base_rounding_adjustment, 0.50)
+		# no rounding adjustment as the Smallest Currency Fraction Value of USD is 0.01
+		if frappe.db.get_value("Currency", "USD", "smallest_currency_fraction_value") < 0.01:
+			self.assertEqual(si.rounding_adjustment, 0.10)
+			self.assertEqual(si.base_rounding_adjustment, 5.0)
+		else:
+			self.assertEqual(si.rounding_adjustment, 0.0)
+			self.assertEqual(si.base_rounding_adjustment, 0.0)
 
 	def test_outstanding(self):
 		w = self.make()
@@ -2098,7 +2106,7 @@ class TestSalesInvoice(FrappeTestCase):
 		self.assertEqual(si.net_total, 19453.13)
 		self.assertEqual(si.grand_total, 24900)
 		self.assertEqual(si.total_taxes_and_charges, 5446.88)
-		self.assertEqual(si.rounding_adjustment, -0.01)
+		self.assertEqual(si.rounding_adjustment, 0.00)
 
 		expected_values = dict(
 			(d[0], d)
@@ -2125,7 +2133,7 @@ class TestSalesInvoice(FrappeTestCase):
 
 	def test_rounding_adjustment_2(self):
 		si = create_sales_invoice(rate=400, do_not_save=True)
-		for rate in [400, 600, 100]:
+		for rate in [400.25, 600.30, 100.65]:
 			si.append(
 				"items",
 				{
@@ -2151,17 +2159,18 @@ class TestSalesInvoice(FrappeTestCase):
 			)
 		si.save()
 		si.submit()
-		self.assertEqual(si.net_total, 1271.19)
-		self.assertEqual(si.grand_total, 1500)
-		self.assertEqual(si.total_taxes_and_charges, 228.82)
-		self.assertEqual(si.rounding_adjustment, -0.01)
+		self.assertEqual(si.net_total, si.base_net_total)
+		self.assertEqual(si.net_total, 1272.20)
+		self.assertEqual(si.grand_total, 1501.20)
+		self.assertEqual(si.total_taxes_and_charges, 229)
+		self.assertEqual(si.rounding_adjustment, -0.20)
 
 		expected_values = [
-			["_Test Account Service Tax - _TC", 0.0, 114.41],
-			["_Test Account VAT - _TC", 0.0, 114.41],
-			[si.debit_to, 1500, 0.0],
-			["Round Off - _TC", 0.01, 0.01],
-			["Sales - _TC", 0.0, 1271.18],
+			["_Test Account Service Tax - _TC", 0.0, 114.50],
+			["_Test Account VAT - _TC", 0.0, 114.50],
+			[si.debit_to, 1501, 0.0],
+			["Round Off - _TC", 0.20, 0.0],
+			["Sales - _TC", 0.0, 1272.20],
 		]
 
 		gl_entries = frappe.db.sql(
@@ -2219,7 +2228,8 @@ class TestSalesInvoice(FrappeTestCase):
 
 		si.save()
 		si.submit()
-		self.assertEqual(si.net_total, 4007.16)
+		self.assertEqual(si.net_total, si.base_net_total)
+		self.assertEqual(si.net_total, 4007.15)
 		self.assertEqual(si.grand_total, 4488.02)
 		self.assertEqual(si.total_taxes_and_charges, 480.86)
 		self.assertEqual(si.rounding_adjustment, -0.02)
@@ -2231,7 +2241,7 @@ class TestSalesInvoice(FrappeTestCase):
 				["_Test Account Service Tax - _TC", 0.0, 240.43],
 				["_Test Account VAT - _TC", 0.0, 240.43],
 				["Sales - _TC", 0.0, 4007.15],
-				["Round Off - _TC", 0.02, 0.01],
+				["Round Off - _TC", 0.01, 0.0],
 			]
 		)
 
@@ -2884,12 +2894,8 @@ class TestSalesInvoice(FrappeTestCase):
 		si.items[0].income_account = "Service - _TC"
 		si.additional_discount_account = "_Test Account Sales - _TC"
 		si.taxes[0].account_head = "TDS Payable - _TC"
+		# Ledger reposted implicitly upon 'Update After Submit'
 		si.save()
-
-		si.load_from_db()
-		self.assertTrue(si.repost_required)
-
-		si.repost_accounting_entries()
 
 		expected_gle = [
 			["_Test Account Sales - _TC", 22.0, 0.0, nowdate()],
@@ -2899,9 +2905,6 @@ class TestSalesInvoice(FrappeTestCase):
 		]
 
 		check_gl_entries(self, si.name, expected_gle, add_days(nowdate(), -1))
-
-		si.load_from_db()
-		self.assertFalse(si.repost_required)
 
 	def test_asset_depreciation_on_sale_with_pro_rata(self):
 		"""
@@ -3031,6 +3034,128 @@ class TestSalesInvoice(FrappeTestCase):
 
 		party_link.delete()
 		frappe.db.set_value("Accounts Settings", None, "enable_common_party_accounting", 0)
+
+	def test_sales_invoice_against_supplier_usd_with_dimensions(self):
+		from erpnext.accounts.doctype.opening_invoice_creation_tool.test_opening_invoice_creation_tool import (
+			make_customer,
+		)
+		from erpnext.accounts.doctype.party_link.party_link import create_party_link
+		from erpnext.buying.doctype.supplier.test_supplier import create_supplier
+
+		# create a customer
+		customer = make_customer(customer="_Test Common Supplier USD")
+		cust_doc = frappe.get_doc("Customer", customer)
+		cust_doc.default_currency = "USD"
+		cust_doc.save()
+		# create a supplier
+		supplier = create_supplier(supplier_name="_Test Common Supplier USD").name
+		supp_doc = frappe.get_doc("Supplier", supplier)
+		supp_doc.default_currency = "USD"
+		supp_doc.save()
+
+		# create a party link between customer & supplier
+		party_link = create_party_link("Supplier", supplier, customer)
+
+		# enable common party accounting
+		frappe.db.set_single_value("Accounts Settings", "enable_common_party_accounting", 1)
+
+		# create a dimension and make it mandatory
+		if not frappe.get_all("Accounting Dimension", filters={"document_type": "Department"}):
+			dim = frappe.get_doc(
+				{
+					"doctype": "Accounting Dimension",
+					"document_type": "Department",
+					"dimension_defaults": [{"company": "_Test Company", "mandatory_for_bs": True}],
+				}
+			)
+			dim.save()
+		else:
+			dim = frappe.get_doc(
+				"Accounting Dimension",
+				frappe.get_all("Accounting Dimension", filters={"document_type": "Department"})[0],
+			)
+			dim.disabled = False
+			dim.dimension_defaults = []
+			dim.append("dimension_defaults", {"company": "_Test Company", "mandatory_for_bs": True})
+			dim.save()
+
+		# create a sales invoice
+		si = create_sales_invoice(
+			customer=customer, parent_cost_center="_Test Cost Center - _TC", do_not_submit=True
+		)
+		si.department = "All Departments"
+		si.save().submit()
+
+		# check outstanding of sales invoice
+		si.reload()
+		self.assertEqual(si.status, "Paid")
+		self.assertEqual(flt(si.outstanding_amount), 0.0)
+
+		# check creation of journal entry
+		jv = frappe.get_all(
+			"Journal Entry Account",
+			{
+				"account": si.debit_to,
+				"party_type": "Customer",
+				"party": si.customer,
+				"reference_type": si.doctype,
+				"reference_name": si.name,
+				"department": "All Departments",
+			},
+			pluck="credit_in_account_currency",
+		)
+
+		self.assertTrue(jv)
+		self.assertEqual(jv[0], si.grand_total)
+
+		dim.disabled = True
+		dim.save()
+		party_link.delete()
+		frappe.db.set_single_value("Accounts Settings", "enable_common_party_accounting", 0)
+
+	def test_sales_invoice_cancel_with_common_party_advance_jv(self):
+		from erpnext.accounts.doctype.opening_invoice_creation_tool.test_opening_invoice_creation_tool import (
+			make_customer,
+		)
+		from erpnext.accounts.doctype.party_link.party_link import create_party_link
+		from erpnext.buying.doctype.supplier.test_supplier import create_supplier
+
+		# create a customer
+		customer = make_customer(customer="_Test Common Supplier")
+		# create a supplier
+		supplier = create_supplier(supplier_name="_Test Common Supplier").name
+
+		# create a party link between customer & supplier
+		party_link = create_party_link("Supplier", supplier, customer)
+
+		# enable common party accounting
+		frappe.db.set_single_value("Accounts Settings", "enable_common_party_accounting", 1)
+
+		# create a sales invoice
+		si = create_sales_invoice(customer=customer)
+
+		# check creation of journal entry
+		jv = frappe.db.get_value(
+			"Journal Entry Account",
+			filters={
+				"reference_type": si.doctype,
+				"reference_name": si.name,
+				"docstatus": 1,
+			},
+			fieldname="parent",
+		)
+
+		self.assertTrue(jv)
+
+		# cancel sales invoice
+		si.cancel()
+
+		# check cancellation of journal entry
+		jv_status = frappe.db.get_value("Journal Entry", jv, "docstatus")
+		self.assertEqual(jv_status, 2)
+
+		party_link.delete()
+		frappe.db.set_single_value("Accounts Settings", "enable_common_party_accounting", 0)
 
 	def test_payment_statuses(self):
 		from erpnext.accounts.doctype.payment_entry.test_payment_entry import get_payment_entry
@@ -3518,6 +3643,122 @@ class TestSalesInvoice(FrappeTestCase):
 			for x in si.taxes
 		]
 		self.assertEqual(expected, actual)
+
+	def test_pos_returns_without_update_outstanding_for_self(self):
+		from erpnext.accounts.doctype.sales_invoice.sales_invoice import make_sales_return
+
+		pos_profile = make_pos_profile()
+		pos_profile.payments = []
+		pos_profile.append("payments", {"default": 1, "mode_of_payment": "Cash"})
+		pos_profile.save()
+
+		pos = create_sales_invoice(qty=10, do_not_save=True)
+		pos.is_pos = 1
+		pos.pos_profile = pos_profile.name
+		pos.append(
+			"payments", {"mode_of_payment": "Bank Draft", "account": "_Test Bank - _TC", "amount": 500}
+		)
+		pos.append("payments", {"mode_of_payment": "Cash", "account": "Cash - _TC", "amount": 500})
+		pos.save().submit()
+
+		pos_return = make_sales_return(pos.name)
+		pos_return.update_outstanding_for_self = False
+		pos_return.save().submit()
+
+		gle = qb.DocType("GL Entry")
+		res = (
+			qb.from_(gle)
+			.select(gle.against_voucher)
+			.distinct()
+			.where(
+				gle.is_cancelled.eq(0) & gle.voucher_no.eq(pos_return.name) & gle.against_voucher.notnull()
+			)
+			.run(as_list=1)
+		)
+		self.assertEqual(len(res), 1)
+		self.assertEqual(res[0][0], pos_return.return_against)
+
+	@change_settings("Accounts Settings", {"enable_common_party_accounting": True})
+	def test_common_party_with_foreign_currency_jv(self):
+		from erpnext.accounts.doctype.account.test_account import create_account
+		from erpnext.accounts.doctype.opening_invoice_creation_tool.test_opening_invoice_creation_tool import (
+			make_customer,
+		)
+		from erpnext.accounts.doctype.party_link.party_link import create_party_link
+		from erpnext.buying.doctype.supplier.test_supplier import create_supplier
+		from erpnext.setup.utils import get_exchange_rate
+
+		creditors = create_account(
+			account_name="Creditors USD",
+			parent_account="Accounts Payable - _TC",
+			company="_Test Company",
+			account_currency="USD",
+			account_type="Payable",
+		)
+		debtors = create_account(
+			account_name="Debtors USD",
+			parent_account="Accounts Receivable - _TC",
+			company="_Test Company",
+			account_currency="USD",
+			account_type="Receivable",
+		)
+
+		# create a customer
+		customer = make_customer(customer="_Test Common Party USD")
+		cust_doc = frappe.get_doc("Customer", customer)
+		cust_doc.default_currency = "USD"
+		test_account_details = {
+			"company": "_Test Company",
+			"account": debtors,
+		}
+		cust_doc.append("accounts", test_account_details)
+		cust_doc.save()
+
+		# create a supplier
+		supplier = create_supplier(supplier_name="_Test Common Party USD").name
+		supp_doc = frappe.get_doc("Supplier", supplier)
+		supp_doc.default_currency = "USD"
+		test_account_details = {
+			"company": "_Test Company",
+			"account": creditors,
+		}
+		supp_doc.append("accounts", test_account_details)
+		supp_doc.save()
+
+		# create a party link between customer & supplier
+		create_party_link("Supplier", supplier, customer)
+
+		# create a sales invoice
+		si = create_sales_invoice(
+			customer=customer,
+			currency="USD",
+			conversion_rate=get_exchange_rate("USD", "INR"),
+			debit_to=debtors,
+			do_not_save=1,
+		)
+		si.party_account_currency = "USD"
+		si.save()
+		si.submit()
+
+		# check outstanding of sales invoice
+		si.reload()
+		self.assertEqual(si.status, "Paid")
+		self.assertEqual(flt(si.outstanding_amount), 0.0)
+
+		# check creation of journal entry
+		jv = frappe.get_all(
+			"Journal Entry Account",
+			{
+				"account": si.debit_to,
+				"party_type": "Customer",
+				"party": si.customer,
+				"reference_type": si.doctype,
+				"reference_name": si.name,
+			},
+			pluck="credit_in_account_currency",
+		)
+		self.assertTrue(jv)
+		self.assertEqual(jv[0], si.grand_total)
 
 
 def check_gl_entries(doc, voucher_no, expected_gle, posting_date):

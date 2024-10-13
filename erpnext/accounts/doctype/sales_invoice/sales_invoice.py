@@ -170,6 +170,7 @@ class SalesInvoice(SellingController):
 		):
 			validate_loyalty_points(self, self.loyalty_points)
 
+		self.allow_write_off_only_on_pos()
 		self.reset_default_field_value("set_warehouse", "items", "warehouse")
 
 	def validate_accounts(self):
@@ -385,7 +386,6 @@ class SalesInvoice(SellingController):
 			self.repost_future_sle_and_gle()
 
 		self.db_set("status", "Cancelled")
-		self.db_set("repost_required", 0)
 
 		if frappe.db.get_single_value("Selling Settings", "sales_update_frequency") == "Each Transaction":
 			update_company_current_month_sales(self.company)
@@ -532,23 +532,23 @@ class SalesInvoice(SellingController):
 				data.sales_invoice = sales_invoice
 
 	def on_update_after_submit(self):
-		if hasattr(self, "repost_required"):
-			fields_to_check = [
-				"additional_discount_account",
-				"cash_bank_account",
-				"account_for_change_amount",
-				"write_off_account",
-				"loyalty_redemption_account",
-				"unrealized_profit_loss_account",
-			]
-			child_tables = {
-				"items": ("income_account", "expense_account", "discount_account"),
-				"taxes": ("account_head",),
-			}
-			self.needs_repost = self.check_if_fields_updated(fields_to_check, child_tables)
-			if self.needs_repost:
-				self.validate_for_repost()
-				self.db_set("repost_required", self.needs_repost)
+		fields_to_check = [
+			"additional_discount_account",
+			"cash_bank_account",
+			"account_for_change_amount",
+			"write_off_account",
+			"loyalty_redemption_account",
+			"unrealized_profit_loss_account",
+			"is_opening",
+		]
+		child_tables = {
+			"items": ("income_account", "expense_account", "discount_account"),
+			"taxes": ("account_head",),
+		}
+		self.needs_repost = self.check_if_fields_updated(fields_to_check, child_tables)
+		if self.needs_repost:
+			self.validate_for_repost()
+			self.repost_accounting_entries()
 
 	def set_paid_amount(self):
 		paid_amount = 0.0
@@ -850,6 +850,10 @@ class SalesInvoice(SellingController):
 					_("Stock cannot be updated against Delivery Note {0}").format(d.delivery_note),
 					raise_exception=1,
 				)
+
+	def allow_write_off_only_on_pos(self):
+		if not self.is_pos and self.write_off_account:
+			self.write_off_account = None
 
 	def validate_write_off_account(self):
 		if flt(self.write_off_amount) and not self.write_off_account:
@@ -1356,6 +1360,10 @@ class SalesInvoice(SellingController):
 				if skip_change_gl_entries and payment_mode.account == self.account_for_change_amount:
 					payment_mode.base_amount -= flt(self.change_amount)
 
+				against_voucher = self.name
+				if self.is_return and self.return_against and not self.update_outstanding_for_self:
+					against_voucher = self.return_against
+
 				if payment_mode.base_amount:
 					# POS, make payment entries
 					gl_entries.append(
@@ -1369,7 +1377,7 @@ class SalesInvoice(SellingController):
 								"credit_in_account_currency": payment_mode.base_amount
 								if self.party_account_currency == self.company_currency
 								else payment_mode.amount,
-								"against_voucher": self.name,
+								"against_voucher": against_voucher,
 								"against_voucher_type": self.doctype,
 								"cost_center": self.cost_center,
 							},
