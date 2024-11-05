@@ -280,8 +280,12 @@ erpnext.accounts.SalesInvoiceController = class SalesInvoiceController extends e
 				party_type: "Customer",
 				account: this.frm.doc.debit_to,
 				price_list: this.frm.doc.selling_price_list,
-				pos_profile: pos_profile
-			}, function() {
+				pos_profile: pos_profile,
+				fetch_payment_terms_template: cint(
+					(this.frm.doc.is_return == 0) & !this.frm.doc.ignore_default_payment_terms_template
+				),
+			},
+			function () {
 				me.apply_pricing_rule();
 			});
 

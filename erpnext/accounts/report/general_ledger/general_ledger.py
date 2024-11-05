@@ -337,8 +337,16 @@ def get_accounts_with_children(accounts):
 	return list(set(all_accounts)) if all_accounts else None
 
 
+def set_bill_no(gl_entries):
+	inv_details = get_supplier_invoice_details()
+	for gl in gl_entries:
+		gl["bill_no"] = inv_details.get(gl.get("against_voucher"), "")
+
+
 def get_data_with_opening_closing(filters, account_details, accounting_dimensions, gl_entries):
 	data = []
+
+	set_bill_no(gl_entries)
 
 	gle_map = initialize_gle_map(gl_entries, filters)
 
@@ -513,7 +521,6 @@ def get_account_type_map(company):
 
 def get_result_as_list(data, filters):
 	balance, _balance_in_account_currency = 0, 0
-	inv_details = get_supplier_invoice_details()
 
 	for d in data:
 		if not d.get("posting_date"):
@@ -523,7 +530,6 @@ def get_result_as_list(data, filters):
 		d["balance"] = balance
 
 		d["account_currency"] = filters.account_currency
-		d["bill_no"] = inv_details.get(d.get("against_voucher"), "")
 
 	return data
 

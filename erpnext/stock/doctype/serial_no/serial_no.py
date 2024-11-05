@@ -335,11 +335,16 @@ def validate_serial_no(sle, item_det):
 					if sr.work_order and work_order and sr.work_order == work_order:
 						allow_existing_serial_no = True
 
-					if not allow_existing_serial_no and sle.voucher_type in [
-						"Stock Entry",
-						"Purchase Receipt",
-						"Purchase Invoice",
-					]:
+					if (
+						not allow_existing_serial_no
+						and sle.voucher_type
+						in [
+							"Stock Entry",
+							"Purchase Receipt",
+							"Purchase Invoice",
+						]
+						and cint(sle.actual_qty) > 0
+					):
 						msg = ""
 
 						if sle.voucher_type == "Stock Entry":

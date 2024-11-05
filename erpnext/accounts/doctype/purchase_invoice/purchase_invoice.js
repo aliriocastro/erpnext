@@ -25,6 +25,13 @@ erpnext.accounts.PurchaseInvoice = class PurchaseInvoice extends erpnext.buying.
 				}
 			};
 		});
+
+		this.frm.set_query("expense_account", "items", function () {
+			return {
+				query: "erpnext.controllers.queries.get_expense_account",
+				filters: { company: doc.company },
+			};
+		});
 	}
 
 	onload() {
@@ -303,8 +310,11 @@ erpnext.accounts.PurchaseInvoice = class PurchaseInvoice extends erpnext.buying.
 				party_type: "Supplier",
 				account: this.frm.doc.credit_to,
 				price_list: this.frm.doc.buying_price_list,
-				fetch_payment_terms_template: cint(!this.frm.doc.ignore_default_payment_terms_template)
-			}, function() {
+				fetch_payment_terms_template: cint(
+					(this.frm.doc.is_return == 0) & !this.frm.doc.ignore_default_payment_terms_template
+				),
+			},
+			function () {
 				me.apply_pricing_rule();
 				me.frm.doc.apply_tds = me.frm.supplier_tds ? 1 : 0;
 				me.frm.doc.tax_withholding_category = me.frm.supplier_tds;
@@ -468,13 +478,6 @@ cur_frm.fields_dict['select_print_heading'].get_query = function(doc, cdt, cdn) 
 		]
 	}
 }
-
-cur_frm.set_query("expense_account", "items", function(doc) {
-	return {
-		query: "erpnext.controllers.queries.get_expense_account",
-		filters: {'company': doc.company }
-	}
-});
 
 cur_frm.set_query("wip_composite_asset", "items", function() {
 	return {

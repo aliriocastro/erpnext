@@ -1524,12 +1524,16 @@ def compare_existing_and_expected_gle(existing_gle, expected_gle, precision):
 	return matched
 
 
-def get_stock_accounts(company, voucher_type=None, voucher_no=None):
+def get_stock_accounts(company, voucher_type=None, voucher_no=None, accounts=None):
 	stock_accounts = [
 		d.name
 		for d in frappe.db.get_all("Account", {"account_type": "Stock", "company": company, "is_group": 0})
 	]
-	if voucher_type and voucher_no:
+
+	if accounts:
+		stock_accounts = [row.account for row in accounts if row.account in stock_accounts]
+
+	elif voucher_type and voucher_no:
 		if voucher_type == "Journal Entry":
 			stock_accounts = [
 				d.account
@@ -1926,6 +1930,7 @@ class QueryPaymentLedger:
 				ple.cost_center.as_("cost_center"),
 				Sum(ple.amount).as_("amount"),
 				Sum(ple.amount_in_account_currency).as_("amount_in_account_currency"),
+				ple.remarks,
 			)
 			.where(ple.delinked == 0)
 			.where(Criterion.all(filter_on_voucher_no))
@@ -1988,6 +1993,7 @@ class QueryPaymentLedger:
 				Table("vouchers").due_date,
 				Table("vouchers").currency,
 				Table("vouchers").cost_center.as_("cost_center"),
+				Table("vouchers").remarks,
 			)
 			.where(Criterion.all(filter_on_outstanding_amount))
 		)

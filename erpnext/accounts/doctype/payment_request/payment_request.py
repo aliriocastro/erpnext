@@ -238,12 +238,12 @@ class PaymentRequest(Document):
 		return controller.get_payment_url(
 			**{
 				"amount": flt(self.grand_total, self.precision("grand_total")),
-				"title": data.company.encode("utf-8"),
-				"description": self.subject.encode("utf-8"),
+				"title": data.company,
+				"description": self.subject,
 				"reference_doctype": "Payment Request",
 				"reference_docname": self.name,
 				"payer_email": self.email_to or frappe.session.user,
-				"payer_name": frappe.safe_encode(data.customer_name),
+				"payer_name": data.customer_name,
 				"order_id": self.name,
 				"currency": self.currency,
 			}
@@ -538,7 +538,7 @@ def make_payment_request(**args):
 			)
 
 		party_type = args.get("party_type") or "Customer"
-		party_account_currency = ref_doc.party_account_currency
+		party_account_currency = ref_doc.get("party_account_currency")
 
 		if not party_account_currency:
 			party_account = get_party_account(party_type, ref_doc.get(party_type.lower()), ref_doc.company)
