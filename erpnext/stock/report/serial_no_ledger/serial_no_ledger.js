@@ -45,8 +45,16 @@ frappe.query_reports["Serial No Ledger"] = {
 		{
 			label: __("As On Date"),
 			fieldtype: "Date",
+			reqd: 1,
 			fieldname: "posting_date",
 			default: frappe.datetime.get_today(),
+		},
+		{
+			label: __("Posting Time"),
+			fieldtype: "Time",
+			reqd: 1,
+			fieldname: "posting_time",
+			default: frappe.datetime.now_time(),
 		},
 	],
 };

@@ -364,7 +364,7 @@ frappe.ui.form.on("BOM", {
 			dialog.fields_dict.items.df.data.push({
 				item_code: d.item_code,
 				variant_item_code: "",
-				qty: d.qty,
+				qty: (d.qty / frm.doc.quantity) * (dialog.fields_dict.qty.value || 1),
 				source_warehouse: d.source_warehouse,
 				operation: d.operation,
 			});

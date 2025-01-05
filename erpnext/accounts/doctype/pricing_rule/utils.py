@@ -642,7 +642,7 @@ def get_product_discount_rule(pricing_rule, item_details, args=None, doc=None):
 		if transaction_qty:
 			qty = flt(transaction_qty) * qty / pricing_rule.recurse_for
 			if pricing_rule.round_free_qty:
-				qty = math.floor(qty)
+				qty = (flt(transaction_qty) // pricing_rule.recurse_for) * (pricing_rule.free_qty or 1)
 
 	if not qty:
 		return

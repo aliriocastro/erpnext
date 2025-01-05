@@ -226,11 +226,16 @@ frappe.ui.form.on('Material Request', {
 			},
 			callback: function(r) {
 				const d = item;
-				const allow_to_change_fields = ['actual_qty', 'projected_qty', 'min_order_qty', 'item_name', 'description', 'stock_uom', 'uom', 'conversion_factor', 'stock_qty'];
 
-				if(!r.exc) {
-					$.each(r.message, function(key, value) {
-						if(!d[key] || allow_to_change_fields.includes(key)) {
+				let allow_to_change_fields = ['actual_qty', 'projected_qty', 'min_order_qty', 'item_name', 'description', 'stock_uom', 'uom', 'conversion_factor', 'stock_qty'];
+
+				if (overwrite_warehouse) {
+					allow_to_change_fields.push("description");
+				}
+
+				if (!r.exc) {
+					$.each(r.message, function (key, value) {
+						if (!d[key] || allow_to_change_fields.includes(key)) {
 							d[key] = value;
 						}
 					});

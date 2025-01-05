@@ -1523,7 +1523,7 @@ class PaymentEntry(AccountsController):
 			if paid_amount > total_negative_outstanding:
 				if total_negative_outstanding == 0:
 					frappe.msgprint(
-						_("Cannot {0} from {2} without any negative outstanding invoice").format(
+						_("Cannot {0} from {1} without any negative outstanding invoice").format(
 							self.payment_type,
 							self.party_type,
 						)
@@ -2605,6 +2605,7 @@ def get_open_payment_requests_for_references(references=None):
 		.where(Tuple(PR.reference_doctype, PR.reference_name).isin(list(refs)))
 		.where(PR.status != "Paid")
 		.where(PR.docstatus == 1)
+		.where(PR.outstanding_amount > 0)  # to avoid old PRs with 0 outstanding amount
 		.orderby(Coalesce(PR.transaction_date, PR.creation), order=frappe.qb.asc)
 	).run(as_dict=True)
 

@@ -30,7 +30,7 @@ erpnext.PointOfSale.Controller = class {
 				fieldname: "mode_of_payment",
 				fieldtype: "Link",
 				in_list_view: 1,
-				label: "Mode of Payment",
+				label: __("Mode of Payment"),
 				options: "Mode of Payment",
 				reqd: 1,
 			},
@@ -38,7 +38,7 @@ erpnext.PointOfSale.Controller = class {
 				fieldname: "opening_amount",
 				fieldtype: "Currency",
 				in_list_view: 1,
-				label: "Opening Amount",
+				label: __("Opening Amount"),
 				options: "company:company_currency",
 				change: function () {
 					dialog.fields_dict.balance_details.df.data.some((d) => {
@@ -87,7 +87,7 @@ erpnext.PointOfSale.Controller = class {
 				{
 					fieldname: "balance_details",
 					fieldtype: "Table",
-					label: "Opening Balance Details",
+					label: __("Opening Balance Details"),
 					cannot_add_rows: false,
 					in_place_edit: true,
 					reqd: 1,
@@ -284,6 +284,7 @@ erpnext.PointOfSale.Controller = class {
 				edit_cart: () => this.payment.edit_cart(),
 
 				customer_details_updated: (details) => {
+					this.item_selector.load_items_data();
 					this.customer_details = details;
 					// will add/remove LP payment method
 					this.payment.render_loyalty_points_payment_mode();

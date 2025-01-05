@@ -595,7 +595,7 @@ class TestPurchaseReceipt(FrappeTestCase):
 		pr2.load_from_db()
 		self.assertEqual(pr2.get("items")[0].billed_amt, 2000)
 		self.assertEqual(pr2.per_billed, 80)
-		self.assertEqual(pr2.status, "To Bill")
+		self.assertEqual(pr2.status, "Partly Billed")
 
 		pr2.cancel()
 		pi2.reload()
@@ -1006,7 +1006,7 @@ class TestPurchaseReceipt(FrappeTestCase):
 		pi.load_from_db()
 		pr.load_from_db()
 
-		self.assertEqual(pr.status, "To Bill")
+		self.assertEqual(pr.status, "Partly Billed")
 		self.assertAlmostEqual(pr.per_billed, 50.0, places=2)
 
 	def test_purchase_receipt_with_exchange_rate_difference(self):
@@ -2682,6 +2682,54 @@ class TestPurchaseReceipt(FrappeTestCase):
 		)
 
 		self.assertEqual(pr.items[0].conversion_factor, 1.0)
+
+	def test_purchase_return_partial_debit_note(self):
+		pr = make_purchase_receipt(
+			company="_Test Company with perpetual inventory",
+			warehouse="Stores - TCP1",
+			supplier_warehouse="Work In Progress - TCP1",
+		)
+
+		return_pr = make_purchase_receipt(
+			company="_Test Company with perpetual inventory",
+			warehouse="Stores - TCP1",
+			supplier_warehouse="Work In Progress - TCP1",
+			is_return=1,
+			return_against=pr.name,
+			qty=-2,
+			do_not_submit=1,
+		)
+		return_pr.items[0].purchase_receipt_item = pr.items[0].name
+		return_pr.submit()
+
+		# because new_doc isn't considering is_return portion of status_updater
+		returned = frappe.get_doc("Purchase Receipt", return_pr.name)
+		returned.update_prevdoc_status()
+		pr.load_from_db()
+
+		# Check if Original PR updated
+		self.assertEqual(pr.items[0].returned_qty, 2)
+		self.assertEqual(pr.per_returned, 40)
+
+		# Create first partial debit_note
+		pi_1 = make_purchase_invoice(return_pr.name)
+		pi_1.items[0].qty = -1
+		pi_1.submit()
+
+		# Check if the first partial debit billing percentage got updated
+		return_pr.reload()
+		self.assertEqual(return_pr.per_billed, 50)
+		self.assertEqual(return_pr.status, "Partly Billed")
+
+		# Create second partial debit_note to complete the debit note
+		pi_2 = make_purchase_invoice(return_pr.name)
+		pi_2.items[0].qty = -1
+		pi_2.submit()
+
+		# Check if the second partial debit note billing percentage got updated
+		return_pr.reload()
+		self.assertEqual(return_pr.per_billed, 100)
+		self.assertEqual(return_pr.status, "Completed")
 
 
 def prepare_data_for_internal_transfer():

@@ -1617,8 +1617,12 @@ class SalesInvoice(SellingController):
 				)
 
 	def update_project(self):
-		if self.project:
-			project = frappe.get_doc("Project", self.project)
+		unique_projects = list(set([d.project for d in self.get("items") if d.project]))
+		if self.project and self.project not in unique_projects:
+			unique_projects.append(self.project)
+
+		for p in unique_projects:
+			project = frappe.get_doc("Project", p)
 			project.update_billed_amount()
 			project.db_update()
 

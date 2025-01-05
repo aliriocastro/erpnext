@@ -454,7 +454,7 @@ def restore_asset(asset_name):
 
 
 def depreciate_asset(asset, date):
-	if not asset.calculate_depreciation:
+	if not asset.calculate_depreciation or asset.is_fully_depreciated:
 		return
 
 	asset.flags.ignore_validate_update_after_submit = True

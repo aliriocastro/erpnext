@@ -742,7 +742,7 @@ class update_entries_after:
 		rate = 0
 		# Material Transfer, Repack, Manufacturing
 		if sle.voucher_type == "Stock Entry":
-			self.recalculate_amounts_in_stock_entry(sle.voucher_no)
+			self.recalculate_amounts_in_stock_entry(sle.voucher_no, sle.voucher_detail_no)
 			rate = frappe.db.get_value("Stock Entry Detail", sle.voucher_detail_no, "valuation_rate")
 		# Sales and Purchase Return
 		elif sle.voucher_type in (
@@ -853,14 +853,15 @@ class update_entries_after:
 
 		# Update outgoing item's rate, recalculate FG Item's rate and total incoming/outgoing amount
 		if not sle.dependant_sle_voucher_detail_no:
-			self.recalculate_amounts_in_stock_entry(sle.voucher_no)
+			self.recalculate_amounts_in_stock_entry(sle.voucher_no, sle.voucher_detail_no)
 
-	def recalculate_amounts_in_stock_entry(self, voucher_no):
+	def recalculate_amounts_in_stock_entry(self, voucher_no, voucher_detail_no):
 		stock_entry = frappe.get_doc("Stock Entry", voucher_no, for_update=True)
 		stock_entry.calculate_rate_and_amount(reset_outgoing_rate=False, raise_error_if_no_rate=False)
 		stock_entry.db_update()
 		for d in stock_entry.items:
-			d.db_update()
+			if d.name == voucher_detail_no or (not d.s_warehouse and d.t_warehouse):
+				d.db_update()
 
 	def update_rate_on_delivery_and_sales_return(self, sle, outgoing_rate):
 		# Update item's incoming rate on transaction
@@ -1262,7 +1263,7 @@ def get_previous_sle_of_current_voucher(args, operator="<", exclude_current_vouc
 			and (
 				posting_datetime {operator} %(posting_datetime)s
 			)
-		order by posting_date desc, posting_time desc, creation desc
+		order by posting_datetime desc, creation desc
 		limit 1
 		for update""",
 		{
@@ -1356,7 +1357,7 @@ def get_stock_ledger_entries(
 		where item_code = %(item_code)s
 		and is_cancelled = 0
 		{conditions}
-		order by posting_date {order}, posting_time {order}, creation {order}
+		order by posting_datetime {order}, creation {order}
 		{limit} {for_update}""".format(
 			conditions=conditions,
 			limit=limit or "",
@@ -1461,7 +1462,7 @@ def get_valuation_rate(
 				AND valuation_rate >= 0
 				AND is_cancelled = 0
 				AND NOT (voucher_no = %s AND voucher_type = %s)
-			order by posting_date desc, posting_time desc, name desc limit 1""",
+			order by posting_datetime desc, creation desc limit 1""",
 			(item_code, warehouse, voucher_no, voucher_type),
 		)
 
@@ -1710,8 +1711,8 @@ def get_future_sle_with_negative_qty(sle):
 			& (SLE.is_cancelled == 0)
 			& (SLE.qty_after_transaction < 0)
 		)
-		.orderby(SLE.posting_date)
-		.orderby(SLE.posting_time)
+		.orderby(SLE.posting_datetime)
+		.orderby(SLE.creation)
 		.limit(1)
 	)
 
@@ -1727,14 +1728,14 @@ def get_future_sle_with_negative_batch_qty(args):
 		with batch_ledger as (
 			select
 				posting_date, posting_time, posting_datetime, voucher_type, voucher_no,
-				sum(actual_qty) over (order by posting_date, posting_time, creation) as cumulative_total
+				sum(actual_qty) over (order by posting_datetime, creation) as cumulative_total
 			from `tabStock Ledger Entry`
 			where
 				item_code = %(item_code)s
 				and warehouse = %(warehouse)s
 				and batch_no=%(batch_no)s
 				and is_cancelled = 0
-			order by posting_date, posting_time, creation
+			order by posting_datetime, creation
 		)
 		select * from batch_ledger
 		where

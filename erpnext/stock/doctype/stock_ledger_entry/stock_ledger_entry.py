@@ -41,6 +41,7 @@ class StockLedgerEntry(Document):
 		self.flags.ignore_submit_comment = True
 		from erpnext.stock.utils import validate_disabled_warehouse, validate_warehouse_company
 
+		self.set_posting_datetime()
 		self.validate_mandatory()
 		self.validate_item()
 		self.validate_batch()
@@ -56,7 +57,6 @@ class StockLedgerEntry(Document):
 		from erpnext.stock.utils import get_combine_datetime
 
 		self.posting_datetime = get_combine_datetime(self.posting_date, self.posting_time)
-		self.db_set("posting_datetime", self.posting_datetime)
 
 	def validate_inventory_dimension_negative_stock(self):
 		if self.is_cancelled:
@@ -128,7 +128,6 @@ class StockLedgerEntry(Document):
 		return inv_dimension_dict
 
 	def on_submit(self):
-		self.set_posting_datetime()
 		self.check_stock_frozen_date()
 		self.calculate_batch_qty()
 

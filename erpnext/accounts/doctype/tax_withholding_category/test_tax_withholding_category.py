@@ -161,6 +161,45 @@ class TestTaxWithholdingCategory(FrappeTestCase):
 		for d in reversed(invoices):
 			d.cancel()
 
+	def test_cumulative_threshold_with_tax_on_excess_amount(self):
+		invoices = []
+		frappe.db.set_value("Supplier", "Test TDS Supplier3", "tax_withholding_category", "New TDS Category")
+
+		# Invoice with tax and without exceeding single and cumulative thresholds
+		for _ in range(2):
+			pi = create_purchase_invoice(supplier="Test TDS Supplier3", rate=10000, do_not_save=True)
+			pi.apply_tds = 1
+			pi.append(
+				"taxes",
+				{
+					"category": "Total",
+					"charge_type": "Actual",
+					"account_head": "_Test Account VAT - _TC",
+					"cost_center": "Main - _TC",
+					"tax_amount": 500,
+					"description": "Test",
+					"add_deduct_tax": "Add",
+				},
+			)
+			pi.save()
+			pi.submit()
+			invoices.append(pi)
+
+		# Third Invoice exceeds single threshold and not exceeding cumulative threshold
+		pi1 = create_purchase_invoice(supplier="Test TDS Supplier3", rate=20000)
+		pi1.apply_tds = 1
+		pi1.save()
+		pi1.submit()
+		invoices.append(pi1)
+
+		# Cumulative threshold is 10,000
+		# Threshold calculation should be only on the third invoice
+		self.assertTrue(len(pi1.taxes) > 0)
+		self.assertEqual(pi1.taxes[0].tax_amount, 1000)
+
+		for d in reversed(invoices):
+			d.cancel()
+
 	def test_cumulative_threshold_tcs(self):
 		frappe.db.set_value(
 			"Customer", "Test TCS Customer", "tax_withholding_category", "Cumulative Threshold TCS"

@@ -21,20 +21,6 @@ frappe.ui.form.on("Sales Order", {
 		frm.set_indicator_formatter('item_code',
 			function(doc) { return (doc.stock_qty<=doc.delivered_qty) ? "green" : "orange" })
 
-		frm.set_query('company_address', function(doc) {
-			if(!doc.company) {
-				frappe.throw(__('Please set Company'));
-			}
-
-			return {
-				query: 'frappe.contacts.doctype.address.address.address_query',
-				filters: {
-					link_doctype: 'Company',
-					link_name: doc.company
-				}
-			};
-		})
-
 		frm.set_query("bom_no", "items", function(doc, cdt, cdn) {
 			var row = locals[cdt][cdn];
 			return {
@@ -82,7 +68,7 @@ frappe.ui.form.on("Sales Order", {
 				target: frm,
 				setters: [
 					{
-						label: 'Supplier',
+						label: __('Supplier'),
 						fieldname: 'supplier',
 						fieldtype: 'Link',
 						options: 'Supplier'
@@ -390,7 +376,7 @@ erpnext.selling.SalesOrderController = class SalesOrderController extends erpnex
 						target: me.frm,
 						setters: [
 							{
-								label: "Customer",
+								label: __("Customer"),
 								fieldname: "party_name",
 								fieldtype: "Link",
 								options: "Customer",
@@ -444,7 +430,7 @@ erpnext.selling.SalesOrderController = class SalesOrderController extends erpnex
 				}
 				else {
 					const fields = [{
-						label: 'Items',
+						label: __('Items'),
 						fieldtype: 'Table',
 						fieldname: 'items',
 						description: __('Select BOM and Qty for Production'),
@@ -738,7 +724,7 @@ erpnext.selling.SalesOrderController = class SalesOrderController extends erpnex
 					"default": 0
 				},
 				{
-					fieldname: 'items_for_po', fieldtype: 'Table', label: 'Select Items',
+					fieldname: 'items_for_po', fieldtype: 'Table', label: __('Select Items'),
 					fields: [
 						{
 							fieldtype:'Data',
