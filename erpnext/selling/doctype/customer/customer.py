@@ -22,6 +22,7 @@ import labotech.labotech.api.client as labotech
 
 from erpnext.accounts.party import (
 	get_dashboard_info,
+	get_timeline_data,
 	validate_party_accounts,
 )
 from erpnext.utilities.transaction_base import TransactionBase

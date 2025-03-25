@@ -69,6 +69,7 @@ class AssetCapitalization(StockController):
 	def on_submit(self):
 		self.update_stock_ledger()
 		self.make_gl_entries()
+		self.repost_future_sle_and_gle()
 		self.update_target_asset()
 
 	def on_cancel(self):
@@ -82,6 +83,7 @@ class AssetCapitalization(StockController):
 		self.cancel_target_asset()
 		self.update_stock_ledger()
 		self.make_gl_entries()
+		self.repost_future_sle_and_gle()
 		self.restore_consumed_asset_items()
 
 	def on_trash(self):

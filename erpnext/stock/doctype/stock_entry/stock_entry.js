@@ -803,7 +803,12 @@ frappe.ui.form.on('Stock Entry Detail', {
 						var d = locals[cdt][cdn];
 						$.each(r.message, function(k, v) {
 							if (v) {
-								frappe.model.set_value(cdt, cdn, k, v); // qty and it's subsequent fields weren't triggered
+								// set_value trigger barcode function and barcode set qty to 1 in stock_controller.js, to avoid this set value manually instead of set value.
+								if (k != "barcode") {
+									frappe.model.set_value(cdt, cdn, k, v); // qty and it's subsequent fields weren't triggered
+								} else {
+									d.barcode = v;
+								}
 							}
 						});
 						refresh_field("items");

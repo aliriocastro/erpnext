@@ -250,7 +250,7 @@ class StockReconciliation(StockController):
 			validate_is_stock_item(item_code, item.is_stock_item)
 
 			# item should not be serialized
-			if item.has_serial_no and not row.serial_no and not item.serial_no_series:
+			if item.has_serial_no and row.qty and not row.serial_no and not item.serial_no_series:
 				raise frappe.ValidationError(
 					_("Serial no(s) required for serialized item {0}").format(item_code)
 				)

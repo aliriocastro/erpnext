@@ -68,6 +68,7 @@ frappe.query_reports["General Ledger"] = {
 			fieldname: "party",
 			label: __("Party"),
 			fieldtype: "MultiSelectList",
+			options: "party_type",
 			get_data: function (txt) {
 				if (!frappe.query_report.filters) return;
 
@@ -146,6 +147,7 @@ frappe.query_reports["General Ledger"] = {
 			fieldname: "cost_center",
 			label: __("Cost Center"),
 			fieldtype: "MultiSelectList",
+			options: "Cost Center",
 			get_data: function (txt) {
 				return frappe.db.get_link_options("Cost Center", txt, {
 					company: frappe.query_report.get_filter_value("company"),
@@ -156,6 +158,7 @@ frappe.query_reports["General Ledger"] = {
 			fieldname: "project",
 			label: __("Project"),
 			fieldtype: "MultiSelectList",
+			options: "Project",
 			get_data: function (txt) {
 				return frappe.db.get_link_options("Project", txt, {
 					company: frappe.query_report.get_filter_value("company"),

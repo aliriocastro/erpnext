@@ -174,7 +174,7 @@ erpnext.buying.BuyingController = class BuyingController extends erpnext.Transac
 	}
 
 	qty(doc, cdt, cdn) {
-		if ((doc.doctype == "Purchase Receipt") || (doc.doctype == "Purchase Invoice" && (doc.update_stock || doc.is_return))) {
+		if ((doc.doctype == "Purchase Receipt") || (doc.doctype == "Purchase Invoice" && doc.update_stock)) {
 			this.calculate_received_qty(doc, cdt, cdn)
 		}
 		super.qty(doc, cdt, cdn);

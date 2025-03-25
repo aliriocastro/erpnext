@@ -42,6 +42,7 @@ class Employee(NestedSet):
 		self.validate_email()
 		self.validate_status()
 		self.validate_reports_to()
+		self.set_preferred_email()
 		self.validate_preferred_email()
 
 		if self.user_id:
@@ -64,14 +65,12 @@ class Employee(NestedSet):
 
 	def validate_user_details(self):
 		if self.user_id:
-			data = frappe.db.get_value("User", self.user_id, ["enabled", "user_image"], as_dict=1)
+			data = frappe.db.get_value("User", self.user_id, ["enabled"], as_dict=1)
 
 			if not data:
 				self.user_id = None
 				return
 
-			if data.get("user_image") and self.image == "":
-				self.image = data.get("user_image")
 			self.validate_for_enabled_user_id(data.get("enabled", 0))
 			self.validate_duplicate_user_id()
 
@@ -184,9 +183,7 @@ class Employee(NestedSet):
 
 	def set_preferred_email(self):
 		preferred_email_field = frappe.scrub(self.prefered_contact_email)
-		if preferred_email_field:
-			preferred_email = self.get(preferred_email_field)
-			self.prefered_email = preferred_email
+		self.prefered_email = self.get(preferred_email_field) if preferred_email_field else None
 
 	def validate_status(self):
 		if self.status == "Left":

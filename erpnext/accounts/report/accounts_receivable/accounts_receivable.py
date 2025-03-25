@@ -498,7 +498,7 @@ class ReceivablePayableReport:
 				ps.description, ps.paid_amount, ps.discounted_amount
 			from `tab{row.voucher_type}` si, `tabPayment Schedule` ps
 			where
-				si.name = ps.parent and
+				si.name = ps.parent and ps.parenttype = '{row.voucher_type}' and
 				si.name = %s and
 				si.is_return = 0
 			order by ps.paid_amount desc, due_date

@@ -209,7 +209,7 @@ class SerialNo(StockController):
 					OR serial_no like %s
 				)
 			ORDER BY
-				posting_date desc, posting_time desc, creation desc""",
+				posting_datetime desc, creation desc""",
 			(
 				self.item_code,
 				self.company,

@@ -110,7 +110,7 @@ erpnext.PointOfSale.PastOrderList = class {
 					</div>
 				</div>
 				<div class="invoice-total-status">
-					<div class="invoice-total">${format_currency(invoice.grand_total, invoice.currency, 0) || 0}</div>
+					<div class="invoice-total">${format_currency(invoice.grand_total, invoice.currency) || 0}</div>
 					<div class="invoice-date">${posting_datetime}</div>
 				</div>
 			</div>

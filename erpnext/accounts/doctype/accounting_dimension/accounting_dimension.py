@@ -25,6 +25,7 @@ class AccountingDimension(Document):
 			"Accounting Dimension Detail",
 			"Company",
 			"Account",
+			"Finance Book",
 		):
 			msg = _("Not allowed to create accounting dimension for {0}").format(self.document_type)
 			frappe.throw(msg)

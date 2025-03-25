@@ -368,3 +368,7 @@ erpnext.patches.v14_0.remove_cancelled_asset_capitalization_from_asset
 erpnext.patches.v14_0.enable_set_priority_for_pricing_rules #1
 erpnext.patches.v14_0.update_currency_exchange_settings_for_frankfurter
 erpnext.patches.v14_0.update_stock_uom_in_work_order_item
+erpnext.patches.v14_0.disable_add_row_in_gross_profit
+execute:frappe.db.set_single_value("Accounts Settings", "exchange_gain_loss_posting_date", "Payment")
+erpnext.patches.v14_0.update_posting_datetime
+erpnext.stock.doctype.stock_ledger_entry.patches.ensure_sle_indexes

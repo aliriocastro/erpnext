@@ -25,10 +25,37 @@ from erpnext.stock.get_item_details import get_conversion_factor
 
 class PickList(Document):
 	def validate(self):
+		self.validate_expired_batches()
 		self.validate_for_qty()
-		if self.pick_manually and self.get("locations"):
-			self.validate_stock_qty()
-			self.check_serial_no_status()
+		self.validate_stock_qty()
+		self.check_serial_no_status()
+
+	def validate_expired_batches(self):
+		batches = []
+		for row in self.get("locations"):
+			if row.get("batch_no") and row.get("picked_qty"):
+				batches.append(row.batch_no)
+
+		if batches:
+			batch = frappe.qb.DocType("Batch")
+			query = (
+				frappe.qb.from_(batch)
+				.select(batch.name)
+				.where(
+					(batch.name.isin(batches))
+					& (batch.expiry_date <= frappe.utils.nowdate())
+					& (batch.expiry_date.isnotnull())
+				)
+			)
+
+			expired_batches = query.run(as_dict=True)
+			if expired_batches:
+				msg = "<ul>" + "".join(f"<li>{batch.name}</li>" for batch in expired_batches) + "</ul>"
+
+				frappe.throw(
+					_("The following batches are expired, please restock them: <br> {0}").format(msg),
+					title=_("Expired Batches"),
+				)
 
 	def before_save(self):
 		self.update_status()
@@ -42,14 +69,24 @@ class PickList(Document):
 		from erpnext.stock.doctype.batch.batch import get_batch_qty
 
 		for row in self.get("locations"):
-			if row.batch_no and not row.qty:
+			if not row.picked_qty:
+				continue
+
+			if row.batch_no and row.picked_qty:
 				batch_qty = get_batch_qty(row.batch_no, row.warehouse, row.item_code)
 
-				if row.qty > batch_qty:
+				if row.picked_qty > batch_qty:
 					frappe.throw(
 						_(
-							"At Row #{0}: The picked quantity {1} for the item {2} is greater than available stock {3} for the batch {4} in the warehouse {5}."
-						).format(row.idx, row.item_code, batch_qty, row.batch_no, bold(row.warehouse)),
+							"At Row #{0}: The picked quantity {1} for the item {2} is greater than available stock {3} for the batch {4} in the warehouse {5}. Please restock the item."
+						).format(
+							row.idx,
+							row.picked_qty,
+							row.item_code,
+							batch_qty,
+							row.batch_no,
+							bold(row.warehouse),
+						),
 						title=_("Insufficient Stock"),
 					)
 
@@ -61,11 +98,11 @@ class PickList(Document):
 				"actual_qty",
 			)
 
-			if row.qty > flt(bin_qty):
+			if row.picked_qty > flt(bin_qty):
 				frappe.throw(
 					_(
 						"At Row #{0}: The picked quantity {1} for the item {2} is greater than available stock {3} in the warehouse {4}."
-					).format(row.idx, row.qty, bold(row.item_code), bin_qty, bold(row.warehouse)),
+					).format(row.idx, row.picked_qty, bold(row.item_code), bin_qty, bold(row.warehouse)),
 					title=_("Insufficient Stock"),
 				)
 
@@ -253,8 +290,16 @@ class PickList(Document):
 		locations_replica = self.get("locations")
 
 		# reset
-		self.delete_key("locations")
+		reset_rows = []
+		for row in self.get("locations"):
+			if not row.picked_qty:
+				reset_rows.append(row)
+
+		for row in reset_rows:
+			self.remove(row)
+
 		updated_locations = frappe._dict()
+		len_idx = len(self.get("locations")) or 0
 		for item_doc in items:
 			item_code = item_doc.item_code
 
@@ -297,6 +342,8 @@ class PickList(Document):
 			if location.picked_qty > location.stock_qty:
 				location.picked_qty = location.stock_qty
 
+			len_idx += 1
+			location.idx = len_idx
 			self.append("locations", location)
 
 		# If table is empty on update after submit, set stock_qty, picked_qty to 0 so that indicator is red
@@ -305,6 +352,9 @@ class PickList(Document):
 			for location in locations_replica:
 				location.stock_qty = 0
 				location.picked_qty = 0
+
+				len_idx += 1
+				location.idx = len_idx
 				self.append("locations", location)
 			frappe.msgprint(
 				_(
@@ -323,6 +373,9 @@ class PickList(Document):
 		# aggregate qty for same item
 		item_map = OrderedDict()
 		for item in locations:
+			if item.picked_qty:
+				continue
+
 			if not item.item_code:
 				frappe.throw(f"Row #{item.idx}: Item Code is Mandatory")
 			if not cint(
@@ -411,9 +464,11 @@ class PickList(Document):
 					pi_item.item_code,
 					pi_item.warehouse,
 					pi_item.batch_no,
-					Sum(Case().when(pi_item.picked_qty > 0, pi_item.picked_qty).else_(pi_item.stock_qty)).as_(
-						"picked_qty"
-					),
+					Sum(
+						Case()
+						.when((pi_item.picked_qty > 0) & (pi_item.docstatus == 1), pi_item.picked_qty)
+						.else_(pi_item.stock_qty)
+					).as_("picked_qty"),
 					Replace(GROUP_CONCAT(pi_item.serial_no), ",", "\n").as_("serial_no"),
 				)
 				.where(
@@ -446,7 +501,31 @@ class PickList(Document):
 				else:
 					picked_items[item_data.item_code][key] = data
 
+		self.update_picked_item_from_current_pick_list(picked_items)
+
 		return picked_items
+
+	def update_picked_item_from_current_pick_list(self, picked_items):
+		for row in self.get("locations"):
+			if flt(row.picked_qty) > 0:
+				key = (row.warehouse, row.batch_no) if row.batch_no else row.warehouse
+				serial_no = [x for x in row.serial_no.split("\n") if x] if row.serial_no else None
+				if row.item_code not in picked_items:
+					picked_items[row.item_code] = {}
+
+				if key not in picked_items[row.item_code]:
+					picked_items[row.item_code][key] = frappe._dict(
+						{
+							"picked_qty": 0,
+							"serial_no": [],
+							"batch_no": row.batch_no or "",
+							"warehouse": row.warehouse,
+						}
+					)
+
+				picked_items[row.item_code][key]["picked_qty"] += flt(row.stock_qty) or flt(row.picked_qty)
+				if serial_no:
+					picked_items[row.item_code][key]["serial_no"].extend(serial_no)
 
 	def _get_product_bundles(self) -> dict[str, str]:
 		# Dict[so_item_row: item_code]

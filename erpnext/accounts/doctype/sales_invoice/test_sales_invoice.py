@@ -1773,17 +1773,6 @@ class TestSalesInvoice(FrappeTestCase):
 
 		self.assertTrue(gle)
 
-	def test_invoice_exchange_rate(self):
-		si = create_sales_invoice(
-			customer="_Test Customer USD",
-			debit_to="_Test Receivable USD - _TC",
-			currency="USD",
-			conversion_rate=1,
-			do_not_save=1,
-		)
-
-		self.assertRaises(frappe.ValidationError, si.save)
-
 	def test_invalid_currency(self):
 		# Customer currency = USD
 
@@ -3860,6 +3849,7 @@ class TestSalesInvoice(FrappeTestCase):
 		si = create_sales_invoice(do_not_submit=True)
 
 		project = frappe.new_doc("Project")
+		project.company = "_Test Company"
 		project.project_name = "Test Total Billed Amount"
 		project.save()
 

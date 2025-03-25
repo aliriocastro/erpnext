@@ -92,7 +92,7 @@ class WorkOrder(Document):
 		if self.source_warehouse:
 			self.set_warehouses()
 
-		validate_uom_is_integer(self, "stock_uom", ["qty", "produced_qty"])
+		validate_uom_is_integer(self, "stock_uom", ["required_qty"])
 
 		self.set_required_items(reset_only_qty=len(self.get("required_items")))
 

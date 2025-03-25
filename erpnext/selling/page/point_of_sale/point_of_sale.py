@@ -51,13 +51,18 @@ def search_by_term(search_term, warehouse, price_list):
 	item_stock_qty = item_stock_qty // item.get("conversion_factor", 1)
 	item.update({"actual_qty": item_stock_qty})
 
+	price_filters = {
+		"price_list": price_list,
+		"item_code": item_code,
+	}
+
+	if batch_no:
+		price_filters["batch_no"] = batch_no
+
 	price = frappe.get_list(
 		doctype="Item Price",
-		filters={
-			"price_list": price_list,
-			"item_code": item_code,
-		},
-		fields=["uom", "currency", "price_list_rate"],
+		filters=price_filters,
+		fields=["uom", "currency", "price_list_rate", "batch_no"],
 	)
 
 	def __sort(p):
@@ -270,12 +275,12 @@ def get_past_order_list(search_term, status, limit=20):
 	invoice_list = []
 
 	if search_term and status:
-		invoices_by_customer = frappe.db.get_all(
+		invoices_by_customer = frappe.db.get_list(
 			"POS Invoice",
 			filters={"customer": ["like", f"%{search_term}%"], "status": status},
 			fields=fields,
 		)
-		invoices_by_name = frappe.db.get_all(
+		invoices_by_name = frappe.db.get_list(
 			"POS Invoice",
 			filters={"name": ["like", f"%{search_term}%"], "status": status},
 			fields=fields,
@@ -283,7 +288,7 @@ def get_past_order_list(search_term, status, limit=20):
 
 		invoice_list = invoices_by_customer + invoices_by_name
 	elif status:
-		invoice_list = frappe.db.get_all("POS Invoice", filters={"status": status}, fields=fields)
+		invoice_list = frappe.db.get_list("POS Invoice", filters={"status": status}, fields=fields)
 
 	return invoice_list
 

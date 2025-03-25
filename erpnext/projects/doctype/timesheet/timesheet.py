@@ -120,7 +120,7 @@ class Timesheet(Document):
 			if data.task and data.task not in tasks:
 				task = frappe.get_doc("Task", data.task)
 				task.update_time_and_costing()
-				task.save()
+				task.save(ignore_permissions=True)
 				tasks.append(data.task)
 
 			elif data.project and data.project not in projects:

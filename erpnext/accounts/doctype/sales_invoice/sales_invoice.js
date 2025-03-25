@@ -9,6 +9,10 @@ erpnext.accounts.SalesInvoiceController = class SalesInvoiceController extends e
 	setup(doc) {
 		this.setup_posting_date_time_check();
 		super.setup(doc);
+		this.frm.make_methods = {
+			Dunning: this.make_dunning.bind(this),
+			"Invoice Discounting": this.make_invoice_discounting.bind(this),
+		};
 	}
 	company() {
 		super.company();
@@ -94,26 +98,35 @@ erpnext.accounts.SalesInvoiceController = class SalesInvoiceController extends e
 				}
 			}
 
-			if (doc.outstanding_amount>0) {
-				cur_frm.add_custom_button(__('Payment Request'), function() {
-					me.make_payment_request();
-				}, __('Create'));
+			if (doc.outstanding_amount > 0) {
+				this.frm.add_custom_button(
+					__("Payment Request"),
+					function () {
+						me.make_payment_request();
+					},
+					__("Create")
+				);
+				this.frm.add_custom_button(
+					__("Invoice Discounting"),
+					this.make_invoice_discounting.bind(this),
+					__("Create")
+				);
 
-				cur_frm.add_custom_button(__('Invoice Discounting'), function() {
-					cur_frm.events.create_invoice_discounting(cur_frm);
-				}, __('Create'));
+				const payment_is_overdue = doc.payment_schedule
+					.map((row) => Date.parse(row.due_date) < Date.now())
+					.reduce((prev, current) => prev || current, false);
 
-				if (doc.due_date < frappe.datetime.get_today()) {
-					cur_frm.add_custom_button(__('Dunning'), function() {
-						cur_frm.events.create_dunning(cur_frm);
-					}, __('Create'));
+				if (payment_is_overdue) {
+					this.frm.add_custom_button(__("Dunning"), this.make_dunning.bind(this), __("Create"));
 				}
 			}
 
 			if (doc.docstatus === 1) {
-				cur_frm.add_custom_button(__('Maintenance Schedule'), function () {
-					cur_frm.cscript.make_maintenance_schedule();
-				}, __('Create'));
+				this.frm.add_custom_button(
+					__("Maintenance Schedule"),
+					this.make_maintenance_schedule.bind(this),
+					__("Create")
+				);
 			}
 
 			if(!doc.auto_repeat) {
@@ -144,6 +157,20 @@ erpnext.accounts.SalesInvoiceController = class SalesInvoiceController extends e
 		}
 
 		erpnext.accounts.unreconcile_payment.add_unreconcile_btn(me.frm);
+	}
+
+	make_invoice_discounting() {
+		frappe.model.open_mapped_doc({
+			method: "erpnext.accounts.doctype.sales_invoice.sales_invoice.create_invoice_discounting",
+			frm: this.frm,
+		});
+	}
+
+	make_dunning() {
+		frappe.model.open_mapped_doc({
+			method: "erpnext.accounts.doctype.sales_invoice.sales_invoice.create_dunning",
+			frm: this.frm,
+		});
 	}
 
 	make_maintenance_schedule() {
@@ -948,20 +975,6 @@ frappe.ui.form.on('Sales Invoice', {
 			frm.set_df_property('return_against', 'label', __('Adjustment Against'));
 		}
 	},
-
-	create_invoice_discounting: function(frm) {
-		frappe.model.open_mapped_doc({
-			method: "erpnext.accounts.doctype.sales_invoice.sales_invoice.create_invoice_discounting",
-			frm: frm
-		});
-	},
-
-	create_dunning: function(frm) {
-		frappe.model.open_mapped_doc({
-			method: "erpnext.accounts.doctype.sales_invoice.sales_invoice.create_dunning",
-			frm: frm
-		});
-	}
 });
 
 frappe.ui.form.on("Sales Invoice Timesheet", {
