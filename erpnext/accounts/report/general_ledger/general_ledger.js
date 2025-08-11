@@ -49,8 +49,13 @@ frappe.query_reports["General Ledger"] = {
 			label: __("Voucher No"),
 			fieldtype: "Data",
 			on_change: function () {
-				frappe.query_report.set_filter_value("group_by", "Group by Voucher (Consolidated)");
+				frappe.query_report.set_filter_value("categorize_by", "Categorize by Voucher (Consolidated)");
 			},
+		},
+		{
+			fieldname: "against_voucher_no",
+			label: __("Against Voucher No"),
+			fieldtype: "Data",
 		},
 		{
 			fieldtype: "Break",
@@ -61,7 +66,7 @@ frappe.query_reports["General Ledger"] = {
 			fieldtype: "Autocomplete",
 			options: Object.keys(frappe.boot.party_account_types),
 			on_change: function () {
-				frappe.query_report.set_filter_value("party", "");
+				frappe.query_report.set_filter_value("party", []);
 			},
 		},
 		{
@@ -107,29 +112,29 @@ frappe.query_reports["General Ledger"] = {
 			hidden: 1,
 		},
 		{
-			fieldname: "group_by",
-			label: __("Group by"),
+			fieldname: "categorize_by",
+			label: __("Categorize by"),
 			fieldtype: "Select",
 			options: [
 				"",
 				{
-					label: __("Group by Voucher"),
-					value: "Group by Voucher",
+					label: __("Categorize by Voucher"),
+					value: "Categorize by Voucher",
 				},
 				{
-					label: __("Group by Voucher (Consolidated)"),
-					value: "Group by Voucher (Consolidated)",
+					label: __("Categorize by Voucher (Consolidated)"),
+					value: "Categorize by Voucher (Consolidated)",
 				},
 				{
-					label: __("Group by Account"),
-					value: "Group by Account",
+					label: __("Categorize by Account"),
+					value: "Categorize by Account",
 				},
 				{
-					label: __("Group by Party"),
-					value: "Group by Party",
+					label: __("Categorize by Party"),
+					value: "Categorize by Party",
 				},
 			],
-			default: "Group by Voucher (Consolidated)",
+			default: "Categorize by Voucher (Consolidated)",
 		},
 		{
 			fieldname: "tax_id",
@@ -190,6 +195,11 @@ frappe.query_reports["General Ledger"] = {
 		{
 			fieldname: "show_net_values_in_party_account",
 			label: __("Show Net Values in Party Account"),
+			fieldtype: "Check",
+		},
+		{
+			fieldname: "show_amount_in_company_currency",
+			label: __("Show Credit / Debit in Company Currency"),
 			fieldtype: "Check",
 		},
 		{

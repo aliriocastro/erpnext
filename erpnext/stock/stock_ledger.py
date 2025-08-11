@@ -655,11 +655,15 @@ class update_entries_after:
 		if not sle.is_adjustment_entry:
 			sle.stock_value_difference = stock_value_difference
 		elif sle.is_adjustment_entry and not self.args.get("sle_id"):
-			sle.stock_value_difference = get_stock_value_difference(
-				sle.item_code, sle.warehouse, sle.posting_date, sle.posting_time, sle.voucher_no
+			sle.stock_value_difference = (
+				get_stock_value_difference(
+					sle.item_code, sle.warehouse, sle.posting_date, sle.posting_time, sle.voucher_no
+				)
+				* -1
 			)
 
 		sle.doctype = "Stock Ledger Entry"
+		sle.modified = now()
 		frappe.get_doc(sle).db_update()
 
 		if not self.args.get("sle_id"):
@@ -864,7 +868,12 @@ class update_entries_after:
 		stock_entry.calculate_rate_and_amount(reset_outgoing_rate=False, raise_error_if_no_rate=False)
 		stock_entry.db_update()
 		for d in stock_entry.items:
-			if d.name == voucher_detail_no or (not d.s_warehouse and d.t_warehouse):
+			# Update only the row that matches the voucher_detail_no or the row containing the FG/Scrap Item.
+			if (
+				d.name == voucher_detail_no
+				or (not d.s_warehouse and d.t_warehouse)
+				or stock_entry.purpose in ["Manufacture", "Repack"]
+			):
 				d.db_update()
 
 	def update_rate_on_delivery_and_sales_return(self, sle, outgoing_rate):
@@ -885,12 +894,19 @@ class update_entries_after:
 
 	def update_rate_on_purchase_receipt(self, sle, outgoing_rate):
 		if frappe.db.exists(sle.voucher_type + " Item", sle.voucher_detail_no):
-			if sle.voucher_type in ["Purchase Receipt", "Purchase Invoice"] and frappe.get_cached_value(
-				sle.voucher_type, sle.voucher_no, "is_internal_supplier"
-			):
-				frappe.db.set_value(
-					f"{sle.voucher_type} Item", sle.voucher_detail_no, "valuation_rate", sle.outgoing_rate
+			if sle.voucher_type in ["Purchase Receipt", "Purchase Invoice"]:
+				details = frappe.get_cached_value(
+					sle.voucher_type,
+					sle.voucher_no,
+					["is_internal_supplier", "is_return", "return_against"],
+					as_dict=True,
 				)
+				if details.is_internal_supplier or (details.is_return and not details.return_against):
+					rate = outgoing_rate if details.is_return else sle.outgoing_rate
+
+					frappe.db.set_value(
+						f"{sle.voucher_type} Item", sle.voucher_detail_no, "valuation_rate", rate
+					)
 		else:
 			frappe.db.set_value(
 				"Purchase Receipt Item Supplied", sle.voucher_detail_no, "rate", outgoing_rate
@@ -1189,16 +1205,16 @@ class update_entries_after:
 			) in frappe.local.flags.currently_saving:
 				msg = _("{0} units of {1} needed in {2} to complete this transaction.").format(
 					abs(deficiency),
-					frappe.get_desk_link("Item", exceptions[0]["item_code"]),
-					frappe.get_desk_link("Warehouse", warehouse),
+					frappe.get_desk_link("Item", exceptions[0]["item_code"], show_title_with_name=True),
+					frappe.get_desk_link("Warehouse", warehouse, show_title_with_name=True),
 				)
 			else:
 				msg = _(
 					"{0} units of {1} needed in {2} on {3} {4} for {5} to complete this transaction."
 				).format(
 					abs(deficiency),
-					frappe.get_desk_link("Item", exceptions[0]["item_code"]),
-					frappe.get_desk_link("Warehouse", warehouse),
+					frappe.get_desk_link("Item", exceptions[0]["item_code"], show_title_with_name=True),
+					frappe.get_desk_link("Warehouse", warehouse, show_title_with_name=True),
 					exceptions[0]["posting_date"],
 					exceptions[0]["posting_time"],
 					frappe.get_desk_link(exceptions[0]["voucher_type"], exceptions[0]["voucher_no"]),
@@ -1659,8 +1675,8 @@ def validate_negative_qty_in_future_sle(args, allow_negative_stock=False):
 	if is_negative_with_precision(neg_sle):
 		message = _("{0} units of {1} needed in {2} on {3} {4} for {5} to complete this transaction.").format(
 			abs(neg_sle[0]["qty_after_transaction"]),
-			frappe.get_desk_link("Item", args.item_code),
-			frappe.get_desk_link("Warehouse", args.warehouse),
+			frappe.get_desk_link("Item", args.item_code, show_title_with_name=True),
+			frappe.get_desk_link("Warehouse", args.warehouse, show_title_with_name=True),
 			neg_sle[0]["posting_date"],
 			neg_sle[0]["posting_time"],
 			frappe.get_desk_link(neg_sle[0]["voucher_type"], neg_sle[0]["voucher_no"]),

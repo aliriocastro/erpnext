@@ -8,7 +8,18 @@ import frappe
 from frappe import ValidationError, _
 from frappe.model.naming import make_autoname
 from frappe.query_builder.functions import Coalesce
-from frappe.utils import add_days, cint, cstr, flt, get_link_to_form, getdate, now, nowdate, safe_json_loads
+from frappe.utils import (
+	add_days,
+	cint,
+	cstr,
+	flt,
+	get_datetime,
+	get_link_to_form,
+	getdate,
+	now,
+	nowdate,
+	safe_json_loads,
+)
 
 from erpnext.controllers.stock_controller import StockController
 from erpnext.stock.get_item_details import get_reserved_qty_for_so
@@ -178,13 +189,13 @@ class SerialNo(StockController):
 		entries = {}
 		sle_dict = self.get_stock_ledger_entries(serial_no)
 		if sle_dict:
+			last_sle = sle_dict.get("last_sle") or {}
+			entries["last_sle"] = last_sle
+
 			if sle_dict.get("incoming", []):
 				entries["purchase_sle"] = sle_dict["incoming"][-1]
 
-			if len(sle_dict.get("incoming", [])) - len(sle_dict.get("outgoing", [])) > 0:
-				entries["last_sle"] = sle_dict["incoming"][0]
-			else:
-				entries["last_sle"] = sle_dict["outgoing"][0]
+			if last_sle.get("actual_qty") < 0 and sle_dict.get("outgoing", []):
 				entries["delivery_sle"] = sle_dict["outgoing"][0]
 
 		return entries
@@ -197,7 +208,7 @@ class SerialNo(StockController):
 		for sle in frappe.db.sql(
 			"""
 			SELECT voucher_type, voucher_no,
-				posting_date, posting_time, incoming_rate, actual_qty, serial_no
+				posting_date, posting_time, incoming_rate, actual_qty, serial_no, posting_datetime
 			FROM
 				`tabStock Ledger Entry`
 			WHERE
@@ -221,6 +232,9 @@ class SerialNo(StockController):
 			as_dict=1,
 		):
 			if serial_no.upper() in get_serial_nos(sle.serial_no):
+				if "last_sle" not in sle_dict:
+					sle_dict["last_sle"] = sle
+
 				if cint(sle.actual_qty) > 0:
 					sle_dict.setdefault("incoming", []).append(sle)
 				else:
@@ -248,8 +262,23 @@ class SerialNo(StockController):
 				_("Cannot delete Serial No {0}, as it is used in stock transactions").format(self.name)
 			)
 
-	def update_serial_no_reference(self, serial_no=None):
+	def update_serial_no_reference(self, serial_no=None, sle=None):
 		last_sle = self.get_last_sle(serial_no)
+
+		_last_sle_dict = last_sle.get("last_sle")
+		if (
+			_last_sle_dict
+			and sle.get("voucher_type") != "Stock Reconciliation"
+			and sle.get("voucher_no") != _last_sle_dict.get("voucher_no")
+			and get_datetime(sle.get("posting_datetime"))
+			< get_datetime(_last_sle_dict.get("posting_datetime"))
+		):
+			frappe.throw(
+				_(
+					"You can not complete this transaction because a future transaction exists for the serial number {0}"
+				).format(serial_no)
+			)
+
 		self.set_purchase_details(last_sle.get("purchase_sle"))
 		self.set_sales_details(last_sle.get("delivery_sle"))
 		self.set_maintenance_status()
@@ -279,7 +308,14 @@ def validate_serial_no(sle, item_det):
 					_("Serial No {0} quantity {1} cannot be a fraction").format(sle.item_code, sle.actual_qty)
 				)
 
-			if len(serial_nos) and len(serial_nos) != abs(cint(sle.actual_qty)):
+			if (
+				(
+					(sle.voucher_type == "Stock Reconciliation" and sle.actual_qty > 0)
+					or sle.voucher_type != "Stock Reconciliation"
+				)
+				and len(serial_nos)
+				and len(serial_nos) != abs(cint(sle.actual_qty))
+			):
 				frappe.throw(
 					_("{0} Serial Numbers required for Item {1}. You have provided {2}.").format(
 						abs(sle.actual_qty), sle.item_code, len(serial_nos)
@@ -760,7 +796,7 @@ def update_args_for_serial_no(serial_no_doc, serial_no, args, is_new=False):
 		serial_no_doc.sales_order = None
 
 	serial_no_doc.validate_item()
-	serial_no_doc.update_serial_no_reference(serial_no)
+	serial_no_doc.update_serial_no_reference(serial_no, sle=args)
 
 	if is_new:
 		serial_no_doc.db_insert()

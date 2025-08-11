@@ -1451,7 +1451,7 @@ class TestDepreciationBasics(AssetSetup):
 		affects `value_after_depreciation`
 		"""
 
-		asset = create_asset(calculate_depreciation=1)
+		asset = create_asset(calculate_depreciation=1, depreciation_start_date="2021-12-31")
 		asset.opening_accumulated_depreciation = 2000
 		asset.number_of_depreciations_booked = 1
 

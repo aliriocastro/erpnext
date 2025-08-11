@@ -16,6 +16,7 @@
   "stock_uom",
   "price_list_defaults_section",
   "auto_insert_price_list_rate_if_missing",
+  "update_price_list_based_on",
   "column_break_12",
   "update_existing_price_list_rate",
   "stock_validations_tab",
@@ -362,6 +363,15 @@
    "fieldname": "allow_existing_serial_no",
    "fieldtype": "Check",
    "label": "Allow existing Serial No to be Manufactured/Received again"
+  },
+  {
+   "default": "Rate",
+   "depends_on": "eval: doc.auto_insert_price_list_rate_if_missing",
+   "fieldname": "update_price_list_based_on",
+   "fieldtype": "Select",
+   "label": "Update Price List Based On",
+   "mandatory_depends_on": "eval: doc.auto_insert_price_list_rate_if_missing",
+   "options": "Rate\nPrice List Rate"
   }
  ],
  "icon": "icon-cog",
@@ -369,7 +379,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2023-05-31 14:15:14.145048",
+ "modified": "2025-05-06 02:39:24.284587",
  "modified_by": "Administrator",
  "module": "Stock",
  "name": "Stock Settings",

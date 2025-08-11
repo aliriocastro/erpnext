@@ -297,7 +297,7 @@ erpnext.TransactionController = class TransactionController extends erpnext.taxe
 			let d = locals[cdt][cdn];
 			return {
 				filters: {
-					docstatus: 1,
+					docstatus: ["<", 2],
 					inspection_type: inspection_type,
 					reference_name: doc.name,
 					item_code: d.item_code

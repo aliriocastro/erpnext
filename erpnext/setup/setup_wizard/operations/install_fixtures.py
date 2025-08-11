@@ -241,8 +241,6 @@ def install(country=None):
 		{"doctype": "Issue Priority", "name": _("Low")},
 		{"doctype": "Issue Priority", "name": _("Medium")},
 		{"doctype": "Issue Priority", "name": _("High")},
-		{"doctype": "Email Account", "email_id": "sales@example.com", "append_to": "Opportunity"},
-		{"doctype": "Email Account", "email_id": "support@example.com", "append_to": "Issue"},
 		{"doctype": "Party Type", "party_type": "Customer", "account_type": "Receivable"},
 		{"doctype": "Party Type", "party_type": "Supplier", "account_type": "Payable"},
 		{"doctype": "Party Type", "party_type": "Employee", "account_type": "Payable"},
@@ -480,6 +478,7 @@ def update_stock_settings():
 	stock_settings.stock_uom = _("Nos")
 	stock_settings.auto_indent = 1
 	stock_settings.auto_insert_price_list_rate_if_missing = 1
+	stock_settings.update_price_list_based_on = "Rate"
 	stock_settings.automatically_set_serial_nos_based_on_fifo = 1
 	stock_settings.set_qty_in_transactions_based_on_serial_no_input = 1
 	stock_settings.save()

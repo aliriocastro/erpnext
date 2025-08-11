@@ -121,10 +121,10 @@ erpnext.accounts.unreconcile_payment = {
 						};
 
 						let d = new frappe.ui.Dialog({
-							title: "UnReconcile Allocations",
+							title: __("UnReconcile Allocations"),
 							fields: unreconcile_dialog_fields,
 							size: "large",
-							primary_action_label: "UnReconcile",
+							primary_action_label: __("UnReconcile"),
 							primary_action(values) {
 								let selected_allocations = values.allocations.filter((x) => x.__checked);
 								if (selected_allocations.length > 0) {
@@ -138,7 +138,7 @@ erpnext.accounts.unreconcile_payment = {
 									);
 									d.hide();
 								} else {
-									frappe.msgprint("No Selection");
+									frappe.msgprint(__("No Selection"));
 								}
 							},
 						});

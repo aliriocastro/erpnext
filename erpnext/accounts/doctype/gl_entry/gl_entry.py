@@ -7,7 +7,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.model.meta import get_field_precision
 from frappe.model.naming import set_name_from_naming_options
-from frappe.utils import flt, fmt_money
+from frappe.utils import flt, fmt_money, now
 
 import erpnext
 from erpnext.accounts.doctype.accounting_dimension.accounting_dimension import (
@@ -405,7 +405,7 @@ def rename_temporarily_named_docs(doctype):
 		set_name_from_naming_options(frappe.get_meta(doctype).autoname, doc)
 		newname = doc.name
 		frappe.db.sql(
-			f"UPDATE `tab{doctype}` SET name = %s, to_rename = 0 where name = %s",
-			(newname, oldname),
+			f"UPDATE `tab{doctype}` SET name = %s, to_rename = 0, modified = %s where name = %s",
+			(newname, now(), oldname),
 			auto_commit=True,
 		)

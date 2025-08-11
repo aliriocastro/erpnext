@@ -6,7 +6,8 @@ from operator import itemgetter
 
 import frappe
 from frappe import _
-from frappe.utils import cint, date_diff, flt, get_datetime
+from frappe.query_builder import Order
+from frappe.utils import add_days, cint, date_diff, flt, get_date_str, get_datetime, getdate
 
 from erpnext.stock.doctype.serial_no.serial_no import get_serial_nos
 
@@ -49,7 +50,13 @@ def format_report_data(filters: Filters, item_details: dict, to_date: str) -> li
 		latest_age = date_diff(to_date, fifo_queue[-1][1])
 		range1, range2, range3, above_range3 = get_range_age(filters, fifo_queue, to_date, item_dict)
 
-		row = [details.name, details.item_name, details.description, details.item_group, details.brand]
+		row = [
+			details.name or details.item_code,
+			details.item_name,
+			details.description,
+			details.item_group,
+			details.brand,
+		]
 
 		if filters.get("show_warehouse_wise_stock"):
 			row.append(details.warehouse)
@@ -217,6 +224,59 @@ class FIFOSlots:
 		self.filters = filters
 		self.sle = sle
 
+	def get_closing_balance(self):
+		if self.filters.get("ignore_closing_balance"):
+			return []
+
+		if (
+			self.filters.get("item_code")
+			or self.filters.get("warehouse")
+			or self.filters.get("warehouse_type")
+		):
+			return
+
+		if self.sle:
+			return
+
+		table = frappe.qb.DocType("Closing Stock Balance")
+
+		query = (
+			frappe.qb.from_(table)
+			.select(table.name, table.to_date)
+			.where(
+				(table.docstatus == 1)
+				& (table.company == self.filters.company)
+				& (table.to_date < self.filters.get("to_date"))
+				& (table.status == "Completed")
+			)
+			.orderby(table.to_date, order=Order.desc)
+			.limit(1)
+		)
+
+		for fieldname in ["warehouse", "item_code", "item_group", "warehouse_type"]:
+			if self.filters.get(fieldname):
+				query = query.where(table[fieldname] == self.filters.get(fieldname))
+
+		return query.run(as_dict=True)
+
+	def prepare_stock_ageing_from_stock_closing_balance(self):
+		closing_balance = self.get_closing_balance()
+		if not closing_balance:
+			return
+
+		self.start_from = add_days(closing_balance[0].to_date, 1)
+		closing_data = frappe.get_doc("Closing Stock Balance", closing_balance[0].name).get_prepared_data()
+		stock_ledger_entries = closing_data.get("data")
+
+		for d in stock_ledger_entries:
+			if isinstance(d, dict):
+				d = frappe._dict(d)
+
+			d.actual_qty = d.bal_qty
+			key, fifo_queue, transferred_item_key = self.__init_key_stores(d)
+
+			self.__update_balances(d, key)
+
 	def generate(self) -> dict:
 		"""
 		Returns dict of the foll.g structure:
@@ -227,6 +287,9 @@ class FIFOSlots:
 		                consumed/updated and maintained via FIFO. **
 		}
 		"""
+		self.start_from = None
+		self.prepare_stock_ageing_from_stock_closing_balance()
+
 		stock_ledger_entries = self.sle
 
 		_system_settings = frappe.get_cached_doc("System Settings")
@@ -259,15 +322,32 @@ class FIFOSlots:
 
 		return self.item_details
 
+	def format_fifo_queue(self, fifo_queue: list) -> list:
+		if not fifo_queue:
+			return []
+
+		fifo_queue = [[x[0], getdate(x[1])] for x in fifo_queue]
+		return fifo_queue
+
 	def __init_key_stores(self, row: dict) -> tuple:
 		"Initialise keys and FIFO Queue."
 
-		key = (row.name, row.warehouse)
-		self.item_details.setdefault(key, {"details": row, "fifo_queue": []})
-		fifo_queue = self.item_details[key]["fifo_queue"]
+		if not row.name:
+			key = (row.item_code, row.warehouse)
+		else:
+			key = (row.name, row.warehouse)
 
-		transferred_item_key = (row.voucher_no, row.name, row.warehouse)
-		self.transferred_item_details.setdefault(transferred_item_key, [])
+		if key not in self.item_details:
+			row.fifo_queue = self.format_fifo_queue(row.fifo_queue)
+
+			self.item_details.setdefault(key, {"details": row, "fifo_queue": row.fifo_queue or []})
+
+		fifo_queue = self.item_details[key]["fifo_queue"]
+		transferred_item_key = None
+
+		if row.voucher_no:
+			transferred_item_key = (row.voucher_no, row.name, row.warehouse)
+			self.transferred_item_details.setdefault(transferred_item_key, [])
 
 		return key, fifo_queue, transferred_item_key
 
@@ -351,10 +431,10 @@ class FIFOSlots:
 				transfer_qty_to_pop = 0
 
 	def __update_balances(self, row: dict, key: tuple | str):
-		self.item_details[key]["qty_after_transaction"] = row.qty_after_transaction
+		self.item_details[key]["qty_after_transaction"] = row.qty_after_transaction or flt(row.bal_qty)
 
 		if "total_qty" not in self.item_details[key]:
-			self.item_details[key]["total_qty"] = row.actual_qty
+			self.item_details[key]["total_qty"] = row.actual_qty or flt(row.bal_qty)
 		else:
 			self.item_details[key]["total_qty"] += row.actual_qty
 
@@ -416,6 +496,10 @@ class FIFOSlots:
 				& (sle.is_cancelled != 1)
 			)
 		)
+
+		if self.start_from:
+			from_date = get_datetime(get_date_str(self.start_from) + " 00:00:00")
+			sle_query = sle_query.where(sle.posting_datetime >= from_date)
 
 		if self.filters.get("warehouse"):
 			sle_query = self.__get_warehouse_conditions(sle, sle_query)

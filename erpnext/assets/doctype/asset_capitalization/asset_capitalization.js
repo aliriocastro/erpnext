@@ -380,7 +380,7 @@ erpnext.assets.AssetCapitalization = class AssetCapitalization extends erpnext.s
 					args: {
 						item_code: item.item_code,
 						warehouse: cstr(item.warehouse),
-						qty: flt(item.stock_qty),
+						qty: -1 * flt(item.stock_qty),
 						serial_no: item.serial_no,
 						posting_date: me.frm.doc.posting_date,
 						posting_time: me.frm.doc.posting_time,

@@ -14,6 +14,7 @@
   "party_user",
   "status",
   "fulfilment_status",
+  "party_full_name",
   "sb_terms",
   "start_date",
   "cb_date",
@@ -244,11 +245,18 @@
    "fieldname": "authorised_by_section",
    "fieldtype": "Section Break",
    "label": "Authorised By"
+  },
+  {
+   "fieldname": "party_full_name",
+   "fieldtype": "Data",
+   "label": "Party Full Name",
+   "read_only": 1
   }
  ],
+ "grid_page_length": 50,
  "is_submittable": 1,
  "links": [],
- "modified": "2020-12-07 11:15:58.385521",
+ "modified": "2025-05-23 13:54:03.346537",
  "modified_by": "Administrator",
  "module": "CRM",
  "name": "Contract",
@@ -315,6 +323,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "show_name_in_global_search": 1,
  "sort_field": "modified",
  "sort_order": "DESC",

@@ -65,3 +65,11 @@ class AccountsSettings(Document):
 	def validate_pending_reposts(self):
 		if self.acc_frozen_upto:
 			check_pending_reposting(self.acc_frozen_upto)
+
+	@frappe.whitelist()
+	def drop_ar_sql_procedures(self):
+		from erpnext.accounts.report.accounts_receivable.accounts_receivable import InitSQLProceduresForAR
+
+		frappe.db.sql(f"drop function if exists {InitSQLProceduresForAR.genkey_function_name}")
+		frappe.db.sql(f"drop procedure if exists {InitSQLProceduresForAR.init_procedure_name}")
+		frappe.db.sql(f"drop procedure if exists {InitSQLProceduresForAR.allocate_procedure_name}")

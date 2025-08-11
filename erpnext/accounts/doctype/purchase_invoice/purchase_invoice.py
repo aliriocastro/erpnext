@@ -781,7 +781,7 @@ class PurchaseInvoice(BuyingController):
 			self.get_provisional_accounts()
 
 		for item in self.get("items"):
-			if flt(item.base_net_amount):
+			if flt(item.base_net_amount) or (self.get("update_stock") and item.valuation_rate):
 				account_currency = get_account_currency(item.expense_account)
 				if item.item_code:
 					frappe.get_cached_value("Item", item.item_code, "asset_category")
@@ -1016,6 +1016,9 @@ class PurchaseInvoice(BuyingController):
 	def get_provisional_accounts(self):
 		self.provisional_accounts = frappe._dict()
 		linked_purchase_receipts = set([d.purchase_receipt for d in self.items if d.purchase_receipt])
+		if not linked_purchase_receipts:
+			return
+
 		pr_items = frappe.get_all(
 			"Purchase Receipt Item",
 			filters={"parent": ("in", linked_purchase_receipts)},
@@ -1123,6 +1126,30 @@ class PurchaseInvoice(BuyingController):
 			)
 
 			warehouse_debit_amount = stock_amount
+
+		elif self.is_return and self.update_stock and (self.is_internal_supplier or not self.return_against):
+			net_rate = item.base_net_amount
+			stock_amount = net_rate + item.item_tax_amount + flt(item.landed_cost_voucher_amount)
+
+			if flt(stock_amount, net_amt_precision) != flt(warehouse_debit_amount, net_amt_precision):
+				cost_of_goods_sold_account = self.get_company_default("default_expense_account")
+				stock_adjustment_amt = stock_amount - warehouse_debit_amount
+
+				gl_entries.append(
+					self.get_gl_dict(
+						{
+							"account": cost_of_goods_sold_account,
+							"against": item.expense_account,
+							"debit": stock_adjustment_amt,
+							"debit_in_transaction_currency": stock_adjustment_amt / self.conversion_rate,
+							"remarks": self.get("remarks") or _("Stock Adjustment"),
+							"cost_center": item.cost_center,
+							"project": item.project or self.project,
+						},
+						account_currency,
+						item=item,
+					)
+				)
 
 		return warehouse_debit_amount
 

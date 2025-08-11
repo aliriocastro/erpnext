@@ -32,8 +32,13 @@ class PeriodClosingVoucher(AccountsController):
 
 	def on_cancel(self):
 		self.validate_future_closing_vouchers()
+		self.ignore_linked_doctypes = (
+			"GL Entry",
+			"Stock Ledger Entry",
+			"Payment Ledger Entry",
+			"Account Closing Balance",
+		)
 		self.db_set("gle_processing_status", "In Progress")
-		self.ignore_linked_doctypes = ("GL Entry", "Stock Ledger Entry", "Payment Ledger Entry")
 		gle_count = frappe.db.count(
 			"GL Entry",
 			{"voucher_type": "Period Closing Voucher", "voucher_no": self.name, "is_cancelled": 0},
@@ -201,6 +206,9 @@ class PeriodClosingVoucher(AccountsController):
 		return gl_entry
 
 	def get_gle_for_closing_account(self, acc):
+		debit = abs(flt(acc.bal_in_company_currency)) if flt(acc.bal_in_company_currency) > 0 else 0
+		credit = abs(flt(acc.bal_in_company_currency)) if flt(acc.bal_in_company_currency) < 0 else 0
+
 		gl_entry = self.get_gl_dict(
 			{
 				"company": self.company,
@@ -209,16 +217,10 @@ class PeriodClosingVoucher(AccountsController):
 				"cost_center": acc.cost_center,
 				"finance_book": acc.finance_book,
 				"account_currency": acc.account_currency,
-				"debit_in_account_currency": abs(flt(acc.bal_in_account_currency))
-				if flt(acc.bal_in_account_currency) > 0
-				else 0,
-				"debit": abs(flt(acc.bal_in_company_currency)) if flt(acc.bal_in_company_currency) > 0 else 0,
-				"credit_in_account_currency": abs(flt(acc.bal_in_account_currency))
-				if flt(acc.bal_in_account_currency) < 0
-				else 0,
-				"credit": abs(flt(acc.bal_in_company_currency))
-				if flt(acc.bal_in_company_currency) < 0
-				else 0,
+				"debit_in_account_currency": debit,
+				"debit": debit,
+				"credit_in_account_currency": credit,
+				"credit": credit,
 				"is_period_closing_voucher_entry": 1,
 			},
 			item=acc,

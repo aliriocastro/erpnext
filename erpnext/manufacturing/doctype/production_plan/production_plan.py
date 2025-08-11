@@ -1048,6 +1048,7 @@ def get_exploded_items(item_details, company, bom_no, include_non_stock_items, p
 			item.purchase_uom,
 			item_uom.conversion_factor,
 			item.safety_stock,
+			bom.item.as_("main_bom_item"),
 		)
 		.where(
 			(bei.docstatus < 2)
@@ -1115,6 +1116,7 @@ def get_subitems(
 			item_default.default_warehouse,
 			item.purchase_uom,
 			item_uom.conversion_factor,
+			bom.item.as_("main_bom_item"),
 		)
 		.where(
 			(bom.name == bom_no)
@@ -1228,6 +1230,7 @@ def get_material_request_items(
 			"sales_order": sales_order,
 			"description": row.get("description"),
 			"uom": row.get("purchase_uom") or row.get("stock_uom"),
+			"main_bom_item": row.get("main_bom_item"),
 		}
 
 
@@ -1757,6 +1760,7 @@ def get_raw_materials_of_sub_assembly_items(
 			item.purchase_uom,
 			item_uom.conversion_factor,
 			item.safety_stock,
+			bom.item.as_("main_bom_item"),
 		)
 		.where(
 			(bei.docstatus == 1)

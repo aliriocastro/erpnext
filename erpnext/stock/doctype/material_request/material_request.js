@@ -497,26 +497,23 @@ erpnext.buying.MaterialRequestController = class MaterialRequestController exten
 	}
 
 	onload(doc, cdt, cdn) {
-		this.frm.set_query("item_code", "items", function() {
+		this.frm.set_query("item_code", "items", function () {
+			let filters = { is_stock_item: 1 };
+
 			if (doc.material_request_type == "Customer Provided") {
-				return{
-					query: "erpnext.controllers.queries.item_query",
-					filters:{
-						'customer': me.frm.doc.customer,
-						'is_stock_item':1
-					}
-				}
-			} else if (doc.material_request_type == "Purchase") {
-				return{
-					query: "erpnext.controllers.queries.item_query",
-					filters: {'is_purchase_item': 1}
-				}
-			} else {
-				return{
-					query: "erpnext.controllers.queries.item_query",
-					filters: {'is_stock_item': 1}
-				}
+				filters.customer = doc.customer;
+			} else if (
+				doc.material_request_type == "Purchase"
+			) {
+				filters = { is_purchase_item: 1 };
+			} else if (doc.material_request_type == "Manufacture") {
+				filters.include_item_in_manufacturing = 1;
 			}
+
+			return {
+				query: "erpnext.controllers.queries.item_query",
+				filters: filters,
+			};
 		});
 	}
 

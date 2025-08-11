@@ -81,5 +81,11 @@ frappe.query_reports["Stock Ageing"] = {
 			fieldtype: "Check",
 			default: 0,
 		},
+		{
+			fieldname: "ignore_closing_balance",
+			label: __("Ignore Closing Balance"),
+			fieldtype: "Check",
+			default: 0,
+		},
 	],
 };

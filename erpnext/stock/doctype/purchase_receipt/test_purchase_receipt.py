@@ -2761,6 +2761,63 @@ class TestPurchaseReceipt(FrappeTestCase):
 		pr.reload()
 		self.assertEqual(pr.status, "To Bill")
 
+	def test_serial_no_exists_in_future(self):
+		from erpnext.stock.doctype.stock_entry.test_stock_entry import make_stock_entry
+
+		item_doc = make_item(
+			"Test Serial No Item Exists in Future",
+			{
+				"is_purchase_item": 1,
+				"is_stock_item": 1,
+				"has_serial_no": 1,
+				"serial_no_series": "SN-SBNS-.#####",
+			},
+		)
+
+		source_warehouse = "_Test Warehouse - _TC"
+		target_warehouse = "_Test Warehouse 1 - _TC"
+		if not frappe.db.exists("Warehouse", target_warehouse):
+			create_warehouse("_Test Warehouse 1")
+
+		make_purchase_receipt(
+			item_code=item_doc.name,
+			qty=1,
+			rate=100,
+			serial_no="SN-SBNS-00001",
+			posting_date=add_days(today(), -2),
+		)
+
+		make_stock_entry(
+			item_code=item_doc.name,
+			qty=1,
+			rate=100,
+			to_warehouse=target_warehouse,
+			serial_no="SN-SBNS-00002",
+			posting_date=add_days(today(), -1),
+		)
+
+		make_stock_entry(
+			item_code=item_doc.name,
+			qty=1,
+			rate=100,
+			from_warehouse=source_warehouse,
+			to_warehouse=target_warehouse,
+			serial_no="SN-SBNS-00001",
+			posting_date=today(),
+		)
+
+		se = make_stock_entry(
+			item_code=item_doc.name,
+			qty=1,
+			rate=100,
+			from_warehouse=target_warehouse,
+			serial_no="SN-SBNS-00001",
+			posting_date=add_days(today(), -1),
+			do_not_submit=True,
+		)
+
+		self.assertRaises(frappe.ValidationError, se.submit)
+
 
 def prepare_data_for_internal_transfer():
 	from erpnext.accounts.doctype.sales_invoice.test_sales_invoice import create_internal_supplier

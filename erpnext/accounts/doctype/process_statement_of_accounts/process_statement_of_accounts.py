@@ -145,7 +145,7 @@ def get_gl_filters(doc, entry, tax_id, presentation_currency):
 		"party": [entry.customer],
 		"party_name": [entry.customer_name] if entry.customer_name else None,
 		"presentation_currency": presentation_currency,
-		"group_by": doc.group_by,
+		"categorize_by": doc.categorize_by,
 		"currency": doc.currency,
 		"project": [p.project_name for p in doc.project],
 		"show_opening_entries": 0,

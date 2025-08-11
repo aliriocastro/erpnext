@@ -491,16 +491,20 @@ def update_billed_amount_based_on_so(so_detail, update_modified=True):
 	from frappe.query_builder.functions import Sum
 
 	# Billed against Sales Order directly
+	si = frappe.qb.DocType("Sales Invoice").as_("si")
 	si_item = frappe.qb.DocType("Sales Invoice Item").as_("si_item")
 	sum_amount = Sum(si_item.amount).as_("amount")
 
 	billed_against_so = (
 		frappe.qb.from_(si_item)
+		.join(si)
+		.on(si.name == si_item.parent)
 		.select(sum_amount)
 		.where(
 			(si_item.so_detail == so_detail)
 			& ((si_item.dn_detail.isnull()) | (si_item.dn_detail == ""))
 			& (si_item.docstatus == 1)
+			& (si.update_stock == 0)
 		)
 		.run()
 	)

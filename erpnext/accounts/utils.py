@@ -2,12 +2,14 @@
 # License: GNU General Public License v3. See license.txt
 
 
+from collections import defaultdict
 from json import loads
 from typing import TYPE_CHECKING, Optional
 
 import frappe
 import frappe.defaults
 from frappe import _, qb, throw
+from frappe.desk.reportview import build_match_conditions
 from frappe.model.meta import get_field_precision
 from frappe.query_builder import AliasedQuery, Criterion, Table
 from frappe.query_builder.functions import Round, Sum
@@ -26,6 +28,7 @@ from frappe.utils import (
 	nowdate,
 )
 from pypika import Order
+from pypika.functions import Coalesce
 from pypika.terms import ExistsCriterion
 
 import erpnext
@@ -1788,14 +1791,17 @@ def update_voucher_outstanding(voucher_type, voucher_no, account, party_type, pa
 	):
 		outstanding = voucher_outstanding[0]
 		ref_doc = frappe.get_doc(voucher_type, voucher_no)
+		outstanding_amount = flt(
+			outstanding["outstanding_in_account_currency"], ref_doc.precision("outstanding_amount")
+		)
 
 		# Didn't use db_set for optimisation purpose
-		ref_doc.outstanding_amount = outstanding["outstanding_in_account_currency"] or 0.0
+		ref_doc.outstanding_amount = outstanding_amount
 		frappe.db.set_value(
 			voucher_type,
 			voucher_no,
 			"outstanding_amount",
-			outstanding["outstanding_in_account_currency"] or 0.0,
+			outstanding_amount,
 		)
 
 		ref_doc.set_status(update=True)
@@ -2188,3 +2194,39 @@ def run_ledger_health_checks():
 					doc.general_and_payment_ledger_mismatch = True
 					doc.checked_on = run_date
 					doc.save()
+
+
+def get_link_fields_grouped_by_option(doctype):
+	meta = frappe.get_meta(doctype)
+	link_fields_map = defaultdict(list)
+
+	for df in meta.fields:
+		if df.fieldtype == "Link" and df.options and not df.ignore_user_permissions:
+			link_fields_map[df.options].append(df.fieldname)
+
+	return link_fields_map
+
+
+def build_qb_match_conditions(doctype, user=None) -> list:
+	match_filters = build_match_conditions(doctype, user, False)
+	link_fields_map = get_link_fields_grouped_by_option(doctype)
+	criterion = []
+	apply_strict_user_permissions = frappe.get_system_settings("apply_strict_user_permissions")
+
+	if match_filters:
+		_dt = qb.DocType(doctype)
+
+		for filter in match_filters:
+			for link_option, allowed_values in filter.items():
+				fieldnames = link_fields_map.get(link_option, [])
+
+				for fieldname in fieldnames:
+					field = _dt[fieldname]
+					cond = field.isin(allowed_values)
+
+					if not apply_strict_user_permissions:
+						cond = (Coalesce(field, "") == "") | cond
+
+					criterion.append(cond)
+
+	return criterion

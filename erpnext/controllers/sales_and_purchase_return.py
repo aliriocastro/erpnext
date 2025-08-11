@@ -368,7 +368,7 @@ def make_return_doc(doctype: str, source_name: str, target_doc=None):
 
 	from erpnext.stock.doctype.serial_no.serial_no import get_serial_nos
 
-	company = frappe.db.get_value("Delivery Note", source_name, "company")
+	company = frappe.db.get_value(doctype, source_name, "company")
 	default_warehouse_for_sales_return = frappe.get_cached_value(
 		"Company", company, "default_warehouse_for_sales_return"
 	)

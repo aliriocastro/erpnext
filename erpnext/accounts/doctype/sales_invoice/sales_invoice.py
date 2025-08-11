@@ -91,8 +91,8 @@ class SalesInvoice(SellingController):
 			self.indicator_title = _("Paid")
 
 	def validate(self):
-		super().validate()
 		self.validate_auto_set_posting_time()
+		super().validate()
 
 		if not (self.is_pos or self.is_debit_note):
 			self.so_dn_required()
@@ -498,7 +498,13 @@ class SalesInvoice(SellingController):
 				"Account", self.debit_to, "account_currency", cache=True
 			)
 		if not self.due_date and self.customer:
-			self.due_date = get_due_date(self.posting_date, "Customer", self.customer, self.company)
+			self.due_date = get_due_date(
+				self.posting_date,
+				"Customer",
+				self.customer,
+				self.company,
+				template_name=self.payment_terms_template,
+			)
 
 		super().set_missing_values(for_validate)
 

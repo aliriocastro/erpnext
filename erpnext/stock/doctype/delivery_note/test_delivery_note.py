@@ -865,6 +865,28 @@ class TestDeliveryNote(FrappeTestCase):
 		self.assertEqual(dn.per_billed, 100)
 		self.assertEqual(dn.status, "Completed")
 
+	def test_dn_billing_status_case5(self):
+		# SO -> SI(with update stock partial invoice)
+		# SO -> DN
+		from erpnext.selling.doctype.sales_order.sales_order import make_delivery_note, make_sales_invoice
+
+		so = make_sales_order(po_no="12345")
+
+		si = make_sales_invoice(so.name)
+		si.get("items")[0].qty = 5
+		si.update_stock = 1
+		si.submit()
+
+		# Testing if Customer's Purchase Order No was rightly copied
+		self.assertEqual(so.po_no, si.po_no)
+
+		dn = make_delivery_note(so.name)
+		dn.submit()
+
+		self.assertEqual(dn.get("items")[0].billed_amt, 0)
+		self.assertEqual(dn.per_billed, 0)
+		self.assertEqual(dn.status, "To Bill")
+
 	def test_delivery_trip(self):
 		dn = create_delivery_note()
 		dt = make_delivery_trip(dn.name)

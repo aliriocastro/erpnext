@@ -179,6 +179,15 @@ def process_gl_map(gl_map, merge_entries=False, precision=None):
 
 
 def distribute_gl_based_on_cost_center_allocation(gl_map, precision=None):
+	round_off_account, default_currency = frappe.get_cached_value(
+		"Company", gl_map[0].company, ["round_off_account", "default_currency"]
+	)
+	if not precision:
+		precision = get_field_precision(
+			frappe.get_meta("GL Entry").get_field("debit"),
+			currency=default_currency,
+		)
+
 	new_gl_map = []
 	for d in gl_map:
 		cost_center = d.get("cost_center")
@@ -189,6 +198,11 @@ def distribute_gl_based_on_cost_center_allocation(gl_map, precision=None):
 			gl_map[0]["company"], gl_map[0]["posting_date"], cost_center
 		)
 		if not cost_center_allocation:
+			new_gl_map.append(d)
+			continue
+
+		if d.account == round_off_account:
+			d.cost_center = cost_center_allocation[0][0]
 			new_gl_map.append(d)
 			continue
 

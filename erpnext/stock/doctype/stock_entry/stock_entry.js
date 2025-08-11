@@ -364,6 +364,7 @@ frappe.ui.form.on('Stock Entry', {
 						docstatus: 1,
 						purpose: "Material Transfer",
 						add_to_transit: 1,
+						per_transferred: ["<", 100],
 					}
 				})
 			}, __("Get Items From"));
