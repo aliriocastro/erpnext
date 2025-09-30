@@ -2219,6 +2219,10 @@ def build_qb_match_conditions(doctype, user=None) -> list:
 		for filter in match_filters:
 			for link_option, allowed_values in filter.items():
 				fieldnames = link_fields_map.get(link_option, [])
+				cond = None
+
+				if link_option == doctype:
+					cond = _dt["name"].isin(allowed_values)
 
 				for fieldname in fieldnames:
 					field = _dt[fieldname]
@@ -2227,6 +2231,7 @@ def build_qb_match_conditions(doctype, user=None) -> list:
 					if not apply_strict_user_permissions:
 						cond = (Coalesce(field, "") == "") | cond
 
+				if cond:
 					criterion.append(cond)
 
 	return criterion

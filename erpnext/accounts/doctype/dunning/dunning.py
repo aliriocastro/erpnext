@@ -55,46 +55,46 @@ class Dunning(AccountsController):
 			"conversion_rate",
 			"cost_center",
 		]
-		inv = frappe.db.get_value("Sales Invoice", self.sales_invoice, invoice_fields, as_dict=1)
 
 		accounting_dimensions = get_accounting_dimensions()
 		invoice_fields.extend(accounting_dimensions)
 
+		inv = frappe.db.get_value("Sales Invoice", self.sales_invoice, invoice_fields, as_dict=1)
+
 		dunning_in_company_currency = flt(self.dunning_amount * inv.conversion_rate)
 		default_cost_center = frappe.get_cached_value("Company", self.company, "cost_center")
 
-		gl_entries.append(
-			self.get_gl_dict(
-				{
-					"account": inv.debit_to,
-					"party_type": "Customer",
-					"party": self.customer,
-					"due_date": self.due_date,
-					"against": self.income_account,
-					"debit": dunning_in_company_currency,
-					"debit_in_account_currency": self.dunning_amount,
-					"against_voucher": self.name,
-					"against_voucher_type": "Dunning",
-					"cost_center": inv.cost_center or default_cost_center,
-					"project": inv.project,
-				},
-				inv.party_account_currency,
-				item=inv,
-			)
-		)
-		gl_entries.append(
-			self.get_gl_dict(
-				{
-					"account": self.income_account,
-					"against": self.customer,
-					"credit": dunning_in_company_currency,
-					"cost_center": inv.cost_center or default_cost_center,
-					"credit_in_account_currency": self.dunning_amount,
-					"project": inv.project,
-				},
-				item=inv,
-			)
-		)
+		debit = {
+			"account": inv.debit_to,
+			"party_type": "Customer",
+			"party": self.customer,
+			"due_date": self.due_date,
+			"against": self.income_account,
+			"debit": dunning_in_company_currency,
+			"debit_in_account_currency": self.dunning_amount,
+			"against_voucher": self.name,
+			"against_voucher_type": "Dunning",
+			"cost_center": inv.cost_center or default_cost_center,
+			"project": inv.project,
+		}
+
+		credit = {
+			"account": self.income_account,
+			"against": self.customer,
+			"credit": dunning_in_company_currency,
+			"credit_in_account_currency": self.dunning_amount,
+			"cost_center": inv.cost_center or default_cost_center,
+			"project": inv.project,
+		}
+
+		for dimension in accounting_dimensions:
+			if val := inv.get(dimension):
+				debit[dimension] = credit[dimension] = val
+
+		gl_entries = [
+			self.get_gl_dict(debit, inv.party_account_currency, item=inv),
+			self.get_gl_dict(credit, item=inv),
+		]
 		make_gl_entries(
 			gl_entries, cancel=(self.docstatus == 2), update_outstanding="No", merge_entries=False
 		)

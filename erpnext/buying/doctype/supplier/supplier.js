@@ -42,6 +42,11 @@ frappe.ui.form.on("Supplier", {
 				},
 			};
 		});
+
+		frm.make_methods = {
+			"Bank Account": () => erpnext.utils.make_bank_account(frm.doc.doctype, frm.doc.name),
+			"Pricing Rule": () => erpnext.utils.make_pricing_rule(frm.doc.doctype, frm.doc.name),
+		};
 	},
 
 	refresh: function (frm) {
@@ -108,7 +113,10 @@ frappe.ui.form.on("Supplier", {
 				__("Actions")
 			);
 
-			if (cint(frappe.defaults.get_default("enable_common_party_accounting"))) {
+			if (
+				cint(frappe.defaults.get_default("enable_common_party_accounting")) &&
+				frappe.model.can_create("Party Link")
+			) {
 				frm.add_custom_button(
 					__("Link with Customer"),
 					function () {
