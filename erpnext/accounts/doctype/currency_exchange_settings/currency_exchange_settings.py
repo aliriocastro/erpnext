@@ -35,7 +35,7 @@ class CurrencyExchangeSettings(Document):
 			self.append("req_params", {"key": "date", "value": "{transaction_date}"})
 			self.append("req_params", {"key": "from", "value": "{from_currency}"})
 			self.append("req_params", {"key": "to", "value": "{to_currency}"})
-		elif self.service_provider == "frankfurter.app":
+		elif self.service_provider == "frankfurter.dev":
 			self.set("result_key", [])
 			self.set("req_params", [])
 
@@ -80,11 +80,11 @@ class CurrencyExchangeSettings(Document):
 
 @frappe.whitelist()
 def get_api_endpoint(service_provider: str | None = None, use_http: bool = False):
-	if service_provider and service_provider in ["exchangerate.host", "frankfurter.app"]:
+	if service_provider and service_provider in ["exchangerate.host", "frankfurter.dev"]:
 		if service_provider == "exchangerate.host":
 			api = "api.exchangerate.host/convert"
-		elif service_provider == "frankfurter.app":
-			api = "api.frankfurter.app/{transaction_date}"
+		elif service_provider == "frankfurter.dev":
+			api = "api.frankfurter.dev/v1/{transaction_date}"
 
 		protocol = "https://"
 		if use_http:
