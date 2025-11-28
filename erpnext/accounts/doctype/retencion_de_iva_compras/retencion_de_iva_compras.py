@@ -7,4 +7,12 @@ from __future__ import unicode_literals
 from frappe.model.document import Document
 
 class RetenciondeIVACompras(Document):
-	pass
+	def on_submit(self):
+		pass
+
+	def on_cancel(self):
+		pass
+
+	def validate(self):
+		pass
+
