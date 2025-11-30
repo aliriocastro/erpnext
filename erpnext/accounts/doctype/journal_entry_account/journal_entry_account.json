@@ -182,7 +182,7 @@
    "fieldtype": "Select",
    "label": "Reference Type",
    "no_copy": 1,
-   "options": "\nSales Invoice\nPurchase Invoice\nJournal Entry\nSales Order\nPurchase Order\nExpense Claim\nAsset\nLoan\nPayroll Entry\nEmployee Advance\nExchange Rate Revaluation\nInvoice Discounting\nFees\nFull and Final Statement\nPayment Entry",
+   "options": "\nSales Invoice\nPurchase Invoice\nJournal Entry\nSales Order\nPurchase Order\nExpense Claim\nAsset\nLoan\nPayroll Entry\nEmployee Advance\nExchange Rate Revaluation\nInvoice Discounting\nFees\nFull and Final Statement\nPayment Entry\nRetencion IVA Ventas\nRetencion IVA Compras",
    "search_index": 1
   },
   {
@@ -266,7 +266,7 @@
  "idx": 1,
  "istable": 1,
  "links": [],
- "modified": "2023-11-23 11:44:25.841187",
+ "modified": "2025-11-30 17:47:26.096237",
  "modified_by": "Administrator",
  "module": "Accounts",
  "name": "Journal Entry Account",
