@@ -251,7 +251,7 @@ class ExchangeRateRevaluation(Document):
 						"balance_in_base_currency": d.balance,
 						"balance_in_account_currency": d.balance_in_account_currency,
 						"zero_balance": d.zero_balance,
-						"current_exchange_rate": current_exchange_rate,
+						"current_exchange_rate": current_average_exchange_rate,
 						"new_exchange_rate": new_exchange_rate,
 						"new_balance_in_base_currency": new_balance_in_base_currency,
 						"new_balance_in_account_currency": d.balance_in_account_currency,
