@@ -1532,11 +1532,7 @@ def get_straight_line_or_manual_depr_amount(asset, row, schedule_idx, number_of_
 	# if the Depreciation Schedule is being prepared for the first time
 	else:
 		if row.daily_prorata_based:
-			amount = (
-				flt(asset.gross_purchase_amount)
-				- flt(asset.opening_accumulated_depreciation)
-				- flt(row.expected_value_after_useful_life)
-			)
+			amount = flt(asset.gross_purchase_amount) - flt(row.expected_value_after_useful_life)
 			total_days = (
 				date_diff(
 					get_last_day(
@@ -1548,7 +1544,11 @@ def get_straight_line_or_manual_depr_amount(asset, row, schedule_idx, number_of_
 					),
 					add_days(
 						get_last_day(
-							add_months(row.depreciation_start_date, -1 * row.frequency_of_depreciation)
+							add_months(
+								row.depreciation_start_date,
+								(row.frequency_of_depreciation * (asset.number_of_depreciations_booked + 1))
+								* -1,
+							),
 						),
 						1,
 					),
@@ -1571,11 +1571,9 @@ def get_straight_line_or_manual_depr_amount(asset, row, schedule_idx, number_of_
 
 			return daily_depr_amount * (date_diff(to_date, from_date) + 1)
 		else:
-			return (
-				flt(asset.gross_purchase_amount)
-				- flt(asset.opening_accumulated_depreciation)
-				- flt(row.expected_value_after_useful_life)
-			) / flt(row.total_number_of_depreciations - asset.number_of_depreciations_booked)
+			return (flt(asset.gross_purchase_amount) - flt(row.expected_value_after_useful_life)) / flt(
+				row.total_number_of_depreciations
+			)
 
 
 def get_shift_depr_amount(asset, row, schedule_idx):

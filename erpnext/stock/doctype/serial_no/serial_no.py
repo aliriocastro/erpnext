@@ -193,7 +193,7 @@ class SerialNo(StockController):
 			entries["last_sle"] = last_sle
 
 			if sle_dict.get("incoming", []):
-				entries["purchase_sle"] = sle_dict["incoming"][-1]
+				entries["purchase_sle"] = sle_dict["incoming"][0]
 
 			if last_sle.get("actual_qty") < 0 and sle_dict.get("outgoing", []):
 				entries["delivery_sle"] = sle_dict["outgoing"][0]

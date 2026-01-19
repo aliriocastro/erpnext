@@ -1507,6 +1507,23 @@ class TestDeliveryNote(FrappeTestCase):
 
 		self.assertEqual(stock_value_difference, 100.0 * 5)
 
+	def test_negative_stock_with_higher_precision(self):
+		original_flt_precision = frappe.db.get_default("float_precision")
+		frappe.db.set_single_value("System Settings", "float_precision", 7)
+
+		item_code = make_item(
+			"Test Negative Stock High Precision Item", properties={"is_stock_item": 1, "valuation_rate": 1}
+		).name
+		dn = create_delivery_note(
+			item_code=item_code,
+			qty=0.0000010,
+			do_not_submit=True,
+		)
+
+		self.assertRaises(frappe.ValidationError, dn.submit)
+
+		frappe.db.set_single_value("System Settings", "float_precision", original_flt_precision)
+
 
 def create_delivery_note(**args):
 	dn = frappe.new_doc("Delivery Note")

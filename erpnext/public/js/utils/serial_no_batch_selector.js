@@ -381,7 +381,7 @@ erpnext.SerialNoBatchSelector = class SerialNoBatchSelector {
 								query: "erpnext.controllers.queries.get_batch_no",
 							};
 						},
-						onchange: function () {
+						change: function () {
 							const batch_no = this.get_value();
 							if (!batch_no) {
 								this.grid_row.on_grid_fields_dict.available_qty.set_value(0);
