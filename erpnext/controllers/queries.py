@@ -470,12 +470,15 @@ def get_batches_from_stock_ledger_entries(searchfields, txt, filters, start=0, p
 		.limit(page_len)
 	)
 
-	if not filters.get("include_expired_batches"):
+	# TODO: Evaluate combining v15's per-request include_expired_batches filter
+	# with our global allow_expired_batches Stock Settings approach
+	allow_expired_batches = frappe.db.get_value("Stock Settings", None, "allow_expired_batches")
+	if not filters.get("include_expired_batches") and not allow_expired_batches:
 		query = query.where((batch_table.expiry_date >= expiry_date) | (batch_table.expiry_date.isnull()))
 
 	query = query.select(
-		Concat("MFG-", batch_table.manufacturing_date).as_("manufacturing_date"),
-		Concat("EXP-", batch_table.expiry_date).as_("expiry_date"),
+		Concat("Fabricación ->", batch_table.manufacturing_date).as_("manufacturing_date"),
+		Concat("Expiración ->", batch_table.expiry_date).as_("expiry_date"),
 	)
 
 	if filters.get("warehouse"):
@@ -523,14 +526,17 @@ def get_batches_from_serial_and_batch_bundle(searchfields, txt, filters, start=0
 		.limit(page_len)
 	)
 
-	if not filters.get("include_expired_batches"):
+	# TODO: Evaluate combining v15's per-request include_expired_batches filter
+	# with our global allow_expired_batches Stock Settings approach
+	allow_expired_batches = frappe.db.get_value("Stock Settings", None, "allow_expired_batches")
+	if not filters.get("include_expired_batches") and not allow_expired_batches:
 		bundle_query = bundle_query.where(
 			(batch_table.expiry_date >= expiry_date) | (batch_table.expiry_date.isnull())
 		)
 
 	bundle_query = bundle_query.select(
-		Concat("MFG-", batch_table.manufacturing_date),
-		Concat("EXP-", batch_table.expiry_date),
+		Concat("Fabricación ->", batch_table.manufacturing_date),
+		Concat("Expiración ->", batch_table.expiry_date),
 	)
 
 	if filters.get("warehouse"):

@@ -443,11 +443,9 @@ def get_party_account(party_type, party=None, company=None, include_advance=Fals
 		)
 		account = frappe.get_cached_value("Company", company, default_account_name)
 
-	existing_gle_currency = get_party_gle_currency(party_type, party, company)
-	if existing_gle_currency:
-		if account:
-			account_currency = frappe.get_cached_value("Account", account, "account_currency")
-		if (account and account_currency != existing_gle_currency) or not account:
+	if not account:
+		existing_gle_currency = get_party_gle_currency(party_type, party, company)
+		if existing_gle_currency:
 			account = get_party_gle_account(party_type, party, company)
 
 	# get default account on the basis of party type
@@ -550,6 +548,8 @@ def validate_party_gle_currency(party_type, party, company, party_account_curren
 		party_account_currency = get_party_account_currency(party_type, party, company)
 
 	existing_gle_currency = get_party_gle_currency(party_type, party, company)
+
+	return  # skip currency validation for multi-currency scenarios
 
 	if existing_gle_currency and party_account_currency != existing_gle_currency:
 		frappe.throw(

@@ -156,7 +156,7 @@ def get_payment_entries_for_bank_clearance(
 				and t1.posting_date >= %(from)s and t1.posting_date <= %(to)s
 				and ifnull(t1.is_opening, 'No') = 'No' {condition}
 			group by t2.account, t1.name
-			order by t1.posting_date ASC, t1.name DESC
+			order by t1.posting_date ASC, t1.cheque_no ASC
 		""",
 		{"account": account, "from": from_date, "to": to_date},
 		as_dict=1,
@@ -178,7 +178,7 @@ def get_payment_entries_for_bank_clearance(
 				and pe.posting_date >= %(from)s and pe.posting_date <= %(to)s
 				{pe_condition}
 			order by
-				pe.posting_date ASC, pe.name DESC
+				pe.posting_date ASC, pe.reference_date DESC
 		""",
 		{
 			"account": account,
