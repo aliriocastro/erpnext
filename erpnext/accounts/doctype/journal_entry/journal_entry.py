@@ -701,7 +701,7 @@ class JournalEntry(AccountsController):
 
 					if (
 						against_voucher[0] != cstr(d.party) or party_account != d.account
-					) and self.voucher_type != "Exchange Gain Or Loss":
+					) and self.voucher_type != "Exchange Gain Or Loss" and self.is_system_generated != 1:
 						frappe.throw(
 							_("Row {0}: Party / Account does not match with {1} / {2} in {3} {4}").format(
 								d.idx,
@@ -778,7 +778,7 @@ class JournalEntry(AccountsController):
 				if invoice.docstatus != 1:
 					frappe.throw(_("{0} {1} is not submitted").format(reference_type, reference_name))
 
-				if total and flt(invoice.outstanding_amount) < total:
+				if total and flt(invoice.outstanding_amount) < total and not frappe.flags.get("ignore_outstanding_check", False):
 					frappe.throw(
 						_("Payment against {0} {1} cannot be greater than Outstanding Amount {2}").format(
 							reference_type, reference_name, invoice.outstanding_amount
