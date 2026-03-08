@@ -56,6 +56,8 @@
   "default_expense_account",
   "default_income_account",
   "default_discount_account",
+  "default_sales_vat_tax_withholding_account",
+  "default_purchase_vat_tax_withholding_account",
   "payment_terms",
   "cost_center",
   "default_finance_book",
@@ -771,6 +773,18 @@
    "fieldname": "submit_err_jv",
    "fieldtype": "Check",
    "label": "Submit ERR Journals?"
+  },
+  {
+   "fieldname": "default_sales_vat_tax_withholding_account",
+   "fieldtype": "Link",
+   "label": "Default Sales VAT Tax Withholding Account",
+   "options": "Account"
+  },
+  {
+   "fieldname": "default_purchase_vat_tax_withholding_account",
+   "fieldtype": "Link",
+   "label": "Default Purchase VAT Tax Withholding Account",
+   "options": "Account"
   },
   {
    "fieldname": "accounts_tab",
