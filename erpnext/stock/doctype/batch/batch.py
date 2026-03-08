@@ -388,6 +388,10 @@ def get_batches(item_code, warehouse, qty=1, throw=False, serial_no=None):
 	batch = frappe.qb.DocType("Batch")
 	sle = frappe.qb.DocType("Stock Ledger Entry")
 
+	allow_expired_batches = frappe.db.get_value('Stock Settings', None, 'allow_expired_batches')
+
+	expiry_condition = (batch.expiry_date >= CurDate()) | (batch.expiry_date.isnull())
+
 	query = (
 		frappe.qb.from_(batch)
 		.join(sle)
@@ -400,7 +404,7 @@ def get_batches(item_code, warehouse, qty=1, throw=False, serial_no=None):
 			(sle.item_code == item_code)
 			& (sle.warehouse == warehouse)
 			& (sle.is_cancelled == 0)
-			& ((batch.expiry_date >= CurDate()) | (batch.expiry_date.isnull()))
+			& (expiry_condition if not allow_expired_batches else True)
 		)
 		.groupby(batch.batch_id)
 		.orderby(batch.expiry_date, batch.creation)

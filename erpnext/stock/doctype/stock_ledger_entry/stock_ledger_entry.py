@@ -283,6 +283,10 @@ class StockLedgerEntry(Document):
 			):
 				return
 
+			allow_expired_batches = frappe.db.get_value('Stock Settings', None, 'allow_expired_batches')
+			if allow_expired_batches:
+				return
+
 			expiry_date = frappe.db.get_value("Batch", self.batch_no, "expiry_date")
 			if expiry_date:
 				if getdate(self.posting_date) > getdate(expiry_date):
