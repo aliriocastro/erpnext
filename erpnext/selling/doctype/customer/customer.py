@@ -18,6 +18,8 @@ from frappe.utils import cint, cstr, flt, get_formatted_email, today
 from frappe.utils.deprecations import deprecated
 from frappe.utils.user import get_users_with_role
 
+import labotech.labotech.api.client as labotech
+
 from erpnext.accounts.party import (
 	get_dashboard_info,
 	validate_party_accounts,
@@ -142,6 +144,11 @@ class Customer(TransactionBase):
 		"""If customer created from Lead, update customer id in quotations, opportunities"""
 		self.update_lead_status()
 
+		if not self.disabled and self.pricing_lists:
+			labotech.build_customer_combined_item_prices(self.name)
+		elif not self.disabled:
+			labotech.clear_customer_combined_item_prices(self.name)
+
 	def validate(self):
 		self.flags.is_new_doc = self.is_new()
 		self.flags.old_lead = self.lead_name
@@ -151,6 +158,7 @@ class Customer(TransactionBase):
 		self.check_customer_group_change()
 		self.validate_default_bank_account()
 		self.validate_internal_customer()
+		self.validate_combined_price_list()
 		self.add_role_for_user()
 		self.validate_currency_for_receivable_payable_and_advance_account()
 
@@ -242,6 +250,12 @@ class Customer(TransactionBase):
 
 		self.update_customer_groups()
 
+		if not self.flags.is_new_doc:
+			if not self.disabled and self.pricing_lists:
+				labotech.build_customer_combined_item_prices(self.name)
+			elif not self.disabled:
+				labotech.clear_customer_combined_item_prices(self.name)
+
 	def add_role_for_user(self):
 		for portal_user in self.portal_users:
 			add_role_for_portal_user(portal_user, "Customer")
@@ -323,6 +337,14 @@ class Customer(TransactionBase):
 				),
 				frappe.NameError,
 			)
+
+	def validate_combined_price_list(self):
+		if not self.default_price_list:
+			return
+
+		default_price_list = frappe.get_doc("Price List", self.default_price_list)
+		if not default_price_list.customer == self.name:
+			self.default_price_list = None  # cannot accept invalid price lists, None or valid.
 
 	def validate_credit_limit_on_change(self):
 		if self.get("__islocal") or not self.credit_limits:
