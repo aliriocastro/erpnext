@@ -215,8 +215,8 @@ class ExchangeRateRevaluation(Document):
 							"balance_in_account_currency"
 						),
 						(Sum(gle.debit) - Sum(gle.credit)).as_("balance"),
-						(Sum(gle.debit) - Sum(gle.credit) == 0)
-						^ (Sum(gle.debit_in_account_currency) - Sum(gle.credit_in_account_currency) == 0).as_(
+						# we don't need to check if gle.balance is zero.
+						(Sum(gle.debit_in_account_currency) - Sum(gle.credit_in_account_currency) == 0).as_(
 							"zero_balance"
 						),
 					)
@@ -258,8 +258,8 @@ class ExchangeRateRevaluation(Document):
 		if account_details:
 			# Handle Accounts with balance in both Account/Base Currency
 			for d in [x for x in account_details if not x.zero_balance]:
-				current_exchange_rate = (
-					d.balance / d.balance_in_account_currency if d.balance_in_account_currency else 0
+				current_average_exchange_rate = (
+					d.balance / d.balance_in_account_currency if d.balance > 0 else 0
 				)
 				new_exchange_rate = get_exchange_rate(d.account_currency, company_currency, posting_date)
 				new_balance_in_base_currency = flt(d.balance_in_account_currency * new_exchange_rate)
@@ -274,7 +274,7 @@ class ExchangeRateRevaluation(Document):
 						"balance_in_base_currency": d.balance,
 						"balance_in_account_currency": d.balance_in_account_currency,
 						"zero_balance": d.zero_balance,
-						"current_exchange_rate": current_exchange_rate,
+						"current_exchange_rate": current_average_exchange_rate,
 						"new_exchange_rate": new_exchange_rate,
 						"new_balance_in_base_currency": new_balance_in_base_currency,
 						"new_balance_in_account_currency": d.balance_in_account_currency,
