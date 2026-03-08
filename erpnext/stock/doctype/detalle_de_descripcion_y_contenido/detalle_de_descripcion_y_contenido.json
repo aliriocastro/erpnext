@@ -1,0 +1,116 @@
+{
+ "autoname": "field:item_code",
+ "creation": "2020-05-09 18:32:30.193028",
+ "description": "Expande la descripci\u00f3n del producto y de su contenido para efectos informativos.",
+ "doctype": "DocType",
+ "document_type": "Document",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "item_name",
+  "section_break_9",
+  "descripcion_corta",
+  "descripcion_contenido"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Producto",
+   "options": "Item",
+   "set_only_once": 1,
+   "unique": 1
+  },
+  {
+   "depends_on": "eval:!doc.item_name==''",
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Nombre del Producto",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_9",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "descripcion_corta",
+   "fieldtype": "Markdown Editor",
+   "in_list_view": 1,
+   "label": "Descripci\u00f3n xCorta",
+   "reqd": 1
+  },
+  {
+   "fieldname": "descripcion_contenido",
+   "fieldtype": "Markdown Editor",
+   "label": "Contenido"
+  }
+ ],
+ "modified": "2020-08-21 21:55:51.570951",
+ "modified_by": "aliriocastro@labotechla.com",
+ "module": "Stock",
+ "name": "Detalle de Descripcion y Contenido",
+ "owner": "aliriocastro@labotechla.com",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Stock Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Stock User",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All",
+   "share": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Item Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "title_field": "item_name",
+ "track_changes": 1
+}
