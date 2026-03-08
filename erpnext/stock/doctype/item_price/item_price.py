@@ -48,7 +48,11 @@ class ItemPrice(Document):
 		self.validate_from_to_dates("valid_from", "valid_upto")
 		self.update_price_list_details()
 		self.update_item_details()
-		self.check_duplicates()
+
+		disable_duplicates_validation = frappe.db.get_single_value("Stock Settings", "disable_item_price_duplicates_validation")
+		if not disable_duplicates_validation:
+			self.check_duplicates()
+
 		self.validate_item_template()
 
 	def validate_item(self):
@@ -140,6 +144,33 @@ class ItemPrice(Document):
 				_(
 					"Item Price appears multiple times based on Price List, Supplier/Customer, Currency, Item, Batch, UOM, Qty, and Dates."
 				),
+				ItemPriceDuplicateItem,
+			)
+
+	def check_duplicates_in_memory(self):
+		"""Check duplicates using in-memory cache for better performance on bulk operations."""
+		cache_key = f"item_prices.{frappe.scrub(self.price_list)}"
+		data = frappe.cache().get_value(cache_key)
+
+		if data is None:
+			data = frappe.db.sql(
+				"""SELECT item_code, price_list, name, uom, valid_from, valid_upto, packing_unit, customer, supplier
+				FROM `tabItem Price`
+				WHERE price_list=%(price_list)s""",
+				{"price_list": self.price_list},
+				as_dict=1,
+			)
+			frappe.cache().set_value(cache_key, data)
+
+		data = [x for x in data if x.get("item_code") == self.item_code and x.get("name") != self.name]
+
+		for field in ["uom", "valid_from", "valid_upto", "packing_unit", "customer", "supplier"]:
+			if self.get(field):
+				data = [x for x in data if x.get(field) == self.get(field)]
+
+		if len(data) > 0:
+			frappe.throw(
+				_("Item Price appears multiple times based on Price List, Supplier/Customer, Currency, Item, UOM, Qty and Dates."),
 				ItemPriceDuplicateItem,
 			)
 
