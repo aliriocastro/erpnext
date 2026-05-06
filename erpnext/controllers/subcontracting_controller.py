@@ -989,6 +989,12 @@ class SubcontractingController(StockController):
 		if self.doctype not in ["Purchase Invoice", "Purchase Receipt", "Subcontracting Receipt"]:
 			return
 
+		if (
+			frappe.db.get_single_value("Buying Settings", "backflush_raw_materials_of_subcontract_based_on")
+			== "BOM"
+		):
+			return
+
 		for row in self.get(self.raw_material_table):
 			key = (row.rm_item_code, row.main_item_code, row.get(self.subcontract_data.order_field))
 			if not self.__transferred_items or not self.__transferred_items.get(key):
@@ -1297,6 +1303,55 @@ def make_rm_stock_entry(
 			if target_doc and target_doc.get("items"):
 				target_doc.items = []
 
+			def post_process(source_doc, target_doc):
+				target_doc.purpose = "Send to Subcontractor"
+
+				if order_doctype == "Purchase Order":
+					target_doc.purchase_order = source_doc.name
+				else:
+					target_doc.subcontracting_order = source_doc.name
+
+				target_doc.set_stock_entry_type()
+
+				for fg_item_code in fg_item_code_list:
+					for rm_item in rm_items:
+						if (
+							rm_item.get("main_item_code") == fg_item_code
+							or rm_item.get("item_code") == fg_item_code
+						):
+							rm_item_code = rm_item.get("rm_item_code")
+
+							items_dict = {
+								rm_item_code: {
+									rm_detail_field: rm_item.get("name"),
+									"item_name": rm_item.get("item_name")
+									or item_wh.get(rm_item_code, {}).get("item_name", ""),
+									"description": item_wh.get(rm_item_code, {}).get("description", ""),
+									"qty": rm_item.get("qty")
+									or max(
+										rm_item.get("required_qty") - rm_item.get("total_supplied_qty"), 0
+									),
+									"from_warehouse": rm_item.get("warehouse")
+									or rm_item.get("reserve_warehouse"),
+									"to_warehouse": source_doc.supplier_warehouse,
+									"stock_uom": rm_item.get("stock_uom"),
+									"serial_and_batch_bundle": rm_item.get("serial_and_batch_bundle"),
+									"main_item_code": fg_item_code,
+									"allow_alternative_item": item_wh.get(rm_item_code, {}).get(
+										"allow_alternative_item"
+									),
+									"use_serial_batch_fields": rm_item.get("use_serial_batch_fields"),
+									"serial_no": rm_item.get("serial_no")
+									if rm_item.get("use_serial_batch_fields")
+									else None,
+									"batch_no": rm_item.get("batch_no")
+									if rm_item.get("use_serial_batch_fields")
+									else None,
+								}
+							}
+
+							target_doc.add_to_stock_entry_detail(items_dict)
+
 			stock_entry = get_mapped_doc(
 				order_doctype,
 				subcontract_order.name,
@@ -1317,52 +1372,8 @@ def make_rm_stock_entry(
 				},
 				target_doc,
 				ignore_child_tables=True,
+				postprocess=post_process,
 			)
-
-			stock_entry.purpose = "Send to Subcontractor"
-
-			if order_doctype == "Purchase Order":
-				stock_entry.purchase_order = subcontract_order.name
-			else:
-				stock_entry.subcontracting_order = subcontract_order.name
-
-			stock_entry.set_stock_entry_type()
-
-			for fg_item_code in fg_item_code_list:
-				for rm_item in rm_items:
-					if (
-						rm_item.get("main_item_code") == fg_item_code
-						or rm_item.get("item_code") == fg_item_code
-					):
-						rm_item_code = rm_item.get("rm_item_code")
-						items_dict = {
-							rm_item_code: {
-								rm_detail_field: rm_item.get("name"),
-								"item_name": rm_item.get("item_name")
-								or item_wh.get(rm_item_code, {}).get("item_name", ""),
-								"description": item_wh.get(rm_item_code, {}).get("description", ""),
-								"qty": rm_item.get("qty")
-								or max(rm_item.get("required_qty") - rm_item.get("total_supplied_qty"), 0),
-								"from_warehouse": rm_item.get("warehouse")
-								or rm_item.get("reserve_warehouse"),
-								"to_warehouse": subcontract_order.supplier_warehouse,
-								"stock_uom": rm_item.get("stock_uom"),
-								"serial_and_batch_bundle": rm_item.get("serial_and_batch_bundle"),
-								"main_item_code": fg_item_code,
-								"allow_alternative_item": item_wh.get(rm_item_code, {}).get(
-									"allow_alternative_item"
-								),
-								"use_serial_batch_fields": rm_item.get("use_serial_batch_fields"),
-								"serial_no": rm_item.get("serial_no")
-								if rm_item.get("use_serial_batch_fields")
-								else None,
-								"batch_no": rm_item.get("batch_no")
-								if rm_item.get("use_serial_batch_fields")
-								else None,
-							}
-						}
-
-						stock_entry.add_to_stock_entry_detail(items_dict)
 
 			if target_doc:
 				return stock_entry
@@ -1395,6 +1406,8 @@ def add_items_in_ste(ste_doc, row, qty, rm_details, rm_detail_field="sco_rm_deta
 def make_return_stock_entry_for_subcontract(
 	available_materials, order_doc, rm_details, order_doctype="Subcontracting Order"
 ):
+	rm_detail_field = "po_detail" if order_doctype == "Purchase Order" else "sco_rm_detail"
+
 	def post_process(source_doc, target_doc):
 		target_doc.purpose = "Material Transfer"
 
@@ -1405,6 +1418,21 @@ def make_return_stock_entry_for_subcontract(
 
 		target_doc.company = source_doc.company
 		target_doc.is_return = 1
+		for _key, value in available_materials.items():
+			if not value.qty:
+				continue
+
+			if item_details := value.get("item_details"):
+				item_details["serial_and_batch_bundle"] = None
+
+			if value.batch_no:
+				for batch_no, qty in value.batch_no.items():
+					if qty > 0:
+						add_items_in_ste(target_doc, value, qty, rm_details, rm_detail_field, batch_no)
+			else:
+				add_items_in_ste(target_doc, value, value.qty, rm_details, rm_detail_field)
+
+		target_doc.set_stock_entry_type()
 
 	ste_doc = get_mapped_doc(
 		order_doctype,
@@ -1418,27 +1446,6 @@ def make_return_stock_entry_for_subcontract(
 		ignore_child_tables=True,
 		postprocess=post_process,
 	)
-
-	if order_doctype == "Purchase Order":
-		rm_detail_field = "po_detail"
-	else:
-		rm_detail_field = "sco_rm_detail"
-
-	for _key, value in available_materials.items():
-		if not value.qty:
-			continue
-
-		if item_details := value.get("item_details"):
-			item_details["serial_and_batch_bundle"] = None
-
-		if value.batch_no:
-			for batch_no, qty in value.batch_no.items():
-				if qty > 0:
-					add_items_in_ste(ste_doc, value, qty, rm_details, rm_detail_field, batch_no)
-		else:
-			add_items_in_ste(ste_doc, value, value.qty, rm_details, rm_detail_field)
-
-	ste_doc.set_stock_entry_type()
 
 	return ste_doc
 

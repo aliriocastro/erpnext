@@ -148,6 +148,7 @@ def make_customer():
 				"doctype": "Customer",
 				"customer_name": "_Test UAE Customer",
 				"customer_type": "Company",
+				"customer_group": "Individual",
 			}
 		)
 		customer.insert()

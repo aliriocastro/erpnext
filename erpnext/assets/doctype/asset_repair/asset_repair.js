@@ -111,16 +111,12 @@ frappe.ui.form.on("Asset Repair", {
 	purchase_invoice: function (frm) {
 		if (frm.doc.purchase_invoice) {
 			frappe.call({
-				method: "frappe.client.get_value",
+				method: "erpnext.assets.doctype.asset_repair.asset_repair.get_repair_cost_for_purchase_invoice",
 				args: {
-					doctype: "Purchase Invoice",
-					fieldname: "base_net_total",
-					filters: { name: frm.doc.purchase_invoice },
+					purchase_invoice: frm.doc.purchase_invoice,
 				},
 				callback: function (r) {
-					if (r.message) {
-						frm.set_value("repair_cost", r.message.base_net_total);
-					}
+					frm.set_value("repair_cost", r.message || 0);
 				},
 			});
 		} else {
@@ -135,7 +131,7 @@ frappe.ui.form.on("Asset Repair", {
 				function () {
 					frappe.route_options = {
 						voucher_no: frm.doc.name,
-						from_date: frm.doc.posting_date,
+						from_date: moment(frm.doc.completion_date).format("YYYY-MM-DD"),
 						to_date: moment(frm.doc.modified).format("YYYY-MM-DD"),
 						company: frm.doc.company,
 						categorize_by: "",
