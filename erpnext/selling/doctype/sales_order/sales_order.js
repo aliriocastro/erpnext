@@ -776,7 +776,7 @@ erpnext.selling.SalesOrderController = class SalesOrderController extends erpnex
 					if (frappe.boot.user.in_create.includes("Payment Request")) {
 						this.frm.add_custom_button(
 							__("Payment Request"),
-							() => this.make_payment_request_with_schedule(),
+							() => this.make_payment_request(),
 							__("Create")
 						);
 					}

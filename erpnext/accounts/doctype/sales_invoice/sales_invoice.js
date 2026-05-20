@@ -140,7 +140,7 @@ erpnext.accounts.SalesInvoiceController = class SalesInvoiceController extends (
 					this.frm.add_custom_button(
 						__("Payment Request"),
 						function () {
-							me.make_payment_request_with_schedule();
+							me.make_payment_request();
 						},
 						__("Create")
 					);

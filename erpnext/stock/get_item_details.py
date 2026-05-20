@@ -671,6 +671,7 @@ def get_item_tax_info(company, tax_category, item_codes, item_rates=None, item_t
 	return out
 
 
+# nosemgrep: frappe-semgrep-rules.rules.security.missing-argument-type-hint
 @frappe.whitelist()
 def get_item_tax_template(args, item=None, out=None):
 	if isinstance(args, str):
@@ -687,16 +688,24 @@ def get_item_tax_template(args, item=None, out=None):
 		item_tax_template = _get_item_tax_template(args, item.taxes, out)
 
 	if not item_tax_template:
-		item_group = item.item_group
-		while item_group and not item_tax_template:
-			item_group_doc = frappe.get_cached_doc("Item Group", item_group)
-			item_tax_template = _get_item_tax_template(args, item_group_doc.taxes, out)
-			item_group = item_group_doc.parent_item_group
+		item_tax_template = _get_item_tax_template_from_item_group(args, item.item_group, out)
 
 	if out and args.get("child_doctype") and item_tax_template:
 		out.update(get_fetch_values(args.get("child_doctype"), "item_tax_template", item_tax_template))
 
 	return item_tax_template
+
+
+def _get_item_tax_template_from_item_group(args, item_group, out=None):
+	from frappe.utils.nestedset import get_ancestors_of
+
+	ancestors = get_ancestors_of("Item Group", item_group)
+	for group in [item_group, *ancestors]:
+		group_doc = frappe.get_cached_doc("Item Group", group)
+		item_tax_template = _get_item_tax_template(args, group_doc.taxes, out)
+		if item_tax_template:
+			return item_tax_template
+	return None
 
 
 def _get_item_tax_template(args, taxes, out=None, for_validate=False):
@@ -1035,7 +1044,7 @@ def insert_item_price(args):
 			)
 			item_price.insert()
 			frappe.msgprint(
-				_("Item Price Added for {0} in Price List {1}").format(
+				_("Item Price added for {0} in Price List - {1}").format(
 					get_link_to_form("Item", args.item_code), args.price_list
 				),
 				alert=True,
@@ -1061,7 +1070,9 @@ def insert_item_price(args):
 		)
 		item_price.insert()
 		frappe.msgprint(
-			_("Item Price added for {0} in Price List {1}").format(args.item_code, args.price_list),
+			_("Item Price added for {0} in Price List - {1}").format(
+				get_link_to_form("Item", args.item_code), args.price_list
+			),
 			alert=True,
 		)
 
