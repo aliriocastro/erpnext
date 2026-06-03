@@ -17,6 +17,7 @@ from pypika import Order
 import erpnext
 from erpnext.accounts.utils import build_qb_match_conditions
 from erpnext.stock.get_item_details import _get_item_tax_template
+from erpnext.stock.utils import get_combine_datetime
 
 
 # searches for active employees
@@ -369,10 +370,14 @@ def get_delivery_notes_to_be_billed(
 		.where((DeliveryNote.docstatus == 1) & (DeliveryNote.is_return == 0) & (DeliveryNote.per_billed > 0))
 	)
 
+	query = frappe.qb.get_query(
+		"Delivery Note",
+		fields=fields,
+		filters=filters,
+	)
+
 	query = (
-		frappe.qb.from_(DeliveryNote)
-		.select(*[DeliveryNote[f] for f in fields])
-		.where(
+		query.where(
 			(DeliveryNote.docstatus == 1)
 			& (DeliveryNote.status.notin(["Stopped", "Closed"]))
 			& (DeliveryNote[searchfield].like(f"%{txt}%"))
@@ -386,12 +391,11 @@ def get_delivery_notes_to_be_billed(
 				)
 			)
 		)
+		.orderby(DeliveryNote[searchfield], order=Order.asc)
+		.limit(page_len)
+		.offset(start)
 	)
-	if filters and isinstance(filters, dict):
-		for key, value in filters.items():
-			query = query.where(DeliveryNote[key] == value)
 
-	query = query.orderby(DeliveryNote[searchfield], order=Order.asc).limit(page_len).offset(start)
 	return query.run(as_dict=as_dict)
 
 
@@ -476,8 +480,18 @@ def get_batches_from_stock_ledger_entries(searchfields, txt, filters, start=0, p
 		.limit(page_len)
 	)
 
-	# TODO: Evaluate combining v15's per-request include_expired_batches filter
-	# with our global allow_expired_batches Stock Settings approach
+	# Upstream v15 (backport #54976/#55184): when not an inward movement, only
+	# consider batches whose stock existed at the requested posting datetime.
+	if not filters.get("is_inward"):
+		if filters.get("posting_date") and filters.get("posting_time"):
+			query = query.where(
+				stock_ledger_entry.posting_datetime
+				<= get_combine_datetime(filters.get("posting_date"), filters.get("posting_time"))
+			)
+
+	# Local customization (allow_expired_batches): in addition to v15's per-request
+	# include_expired_batches flag, honor a global Stock Settings switch that lets
+	# expired batches be picked everywhere. Filter expiry only when neither applies.
 	allow_expired_batches = frappe.db.get_value("Stock Settings", None, "allow_expired_batches")
 	if not filters.get("include_expired_batches") and not allow_expired_batches:
 		query = query.where((batch_table.expiry_date >= expiry_date) | (batch_table.expiry_date.isnull()))
@@ -532,8 +546,18 @@ def get_batches_from_serial_and_batch_bundle(searchfields, txt, filters, start=0
 		.limit(page_len)
 	)
 
-	# TODO: Evaluate combining v15's per-request include_expired_batches filter
-	# with our global allow_expired_batches Stock Settings approach
+	# Upstream v15 (backport #54976/#55184): when not an inward movement, only
+	# consider batches whose stock existed at the requested posting datetime.
+	if not filters.get("is_inward"):
+		if filters.get("posting_date") and filters.get("posting_time"):
+			bundle_query = bundle_query.where(
+				stock_ledger_entry.posting_datetime
+				<= get_combine_datetime(filters.get("posting_date"), filters.get("posting_time"))
+			)
+
+	# Local customization (allow_expired_batches): in addition to v15's per-request
+	# include_expired_batches flag, honor a global Stock Settings switch that lets
+	# expired batches be picked everywhere. Filter expiry only when neither applies.
 	allow_expired_batches = frappe.db.get_value("Stock Settings", None, "allow_expired_batches")
 	if not filters.get("include_expired_batches") and not allow_expired_batches:
 		bundle_query = bundle_query.where(
