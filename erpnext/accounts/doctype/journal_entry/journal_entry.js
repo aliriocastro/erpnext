@@ -40,6 +40,10 @@ frappe.ui.form.on("Journal Entry", {
 	},
 
 	refresh: function (frm) {
+		if (frm.doc.reversal_of && (frm.is_new() || frm.doc.docstatus == 0)) {
+			erpnext.journal_entry.lock_reversal_entry(frm);
+		}
+
 		erpnext.toggle_naming_series();
 
 		if (frm.doc.docstatus > 0) {
@@ -507,6 +511,14 @@ $.extend(erpnext.journal_entry, {
 				frm.doc.multi_currency ? label + " in Account Currency" : label
 			);
 		});
+	},
+
+	lock_reversal_entry: function (frm) {
+		frm.fields
+			.filter((field) => field.has_input)
+			.filter((field) => field.df.fieldname != "posting_date")
+			.forEach((field) => frm.set_df_property(field.df.fieldname, "read_only", 1));
+		frm.set_df_property("accounts", "read_only", 1);
 	},
 
 	set_debit_credit_in_company_currency: function (frm, cdt, cdn) {

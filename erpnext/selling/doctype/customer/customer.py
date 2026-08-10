@@ -25,7 +25,10 @@ from erpnext.accounts.party import (
 	validate_party_accounts,
 	validate_party_currency_before_merging,
 )
-from erpnext.controllers.website_list_for_contact import add_role_for_portal_user
+from erpnext.controllers.website_list_for_contact import (
+	add_role_for_portal_user,
+	link_portal_users_to_contacts,
+)
 from erpnext.utilities.transaction_base import TransactionBase
 
 
@@ -251,6 +254,18 @@ class Customer(TransactionBase):
 
 		self.update_customer_groups()
 
+		link_portal_users_to_contacts(self)
+
+		# LABOTECH: reconstruye los Item Price combinados del cliente al guardarlo.
+		#
+		# WHY: el precio efectivo de un cliente sale de combinar sus `pricing_lists`; ese
+		# combinado se materializa en Item Price y no se recalcula solo. Sin este hook, editar
+		# las listas de un cliente deja los precios viejos vigentes hasta el próximo rebuild
+		# manual, y la venta sale con el precio equivocado sin ningún aviso.
+		#
+		# `is_new_doc` se excluye porque after_insert ya hizo el build inicial (evita el doble
+		# trabajo). Si está deshabilitado no se toca nada: se conserva lo que haya para no
+		# alterar el histórico. Customización introducida en a6a82cb079.
 		if not self.flags.is_new_doc:
 			if not self.disabled and self.pricing_lists:
 				labotech.build_customer_combined_item_prices(self.name)

@@ -217,6 +217,7 @@ class Item(Document):
 		self.validate_item_defaults()
 		self.validate_auto_reorder_enabled_in_stock_settings()
 		self.cant_change()
+		self.validate_serialized_change_with_bundle()
 		self.validate_item_tax_net_rate_range()
 
 		if not self.is_new():
@@ -836,7 +837,17 @@ class Item(Document):
 				frappe.throw(_("Item {0} is not a template item.").format(frappe.bold(self.variant_of)))
 
 			if based_on == "Item Attribute":
+				previous_doc = self.get_doc_before_save()
+				saved_attributes = (
+					{(row.attribute, row.attribute_value) for row in previous_doc.attributes}
+					if previous_doc
+					else set()
+				)
+
 				for d in self.attributes:
+					if (d.attribute, d.attribute_value) in saved_attributes:
+						continue
+
 					if not frappe.db.exists(
 						"Item Variant Attribute", {"attribute": d.attribute, "parent": self.variant_of}
 					):
@@ -1073,6 +1084,25 @@ class Item(Document):
 				)
 
 			frappe.throw(msg, title=_("Linked with submitted documents"))
+
+	def validate_serialized_change_with_bundle(self):
+		"""Block turning a serialized item non-serialized while any Serial and Batch Bundle still exists
+		for it. Such bundles carry the item's serial numbers; the user must delete or cancel them first."""
+		if self.is_new() or self.has_serial_no or not self._doc_before_save:
+			return
+
+		# Only relevant when the item was serialized before and is now being unset.
+		if not self._doc_before_save.has_serial_no:
+			return
+
+		# Draft (docstatus 0) or submitted (docstatus 1) bundles block the change; cancelled ones don't.
+		if frappe.db.count("Serial and Batch Bundle", {"item_code": self.name, "docstatus": ("<", 2)}):
+			frappe.throw(
+				_(
+					"Cannot change Item {0} from serialized to non-serialized because a Serial and Batch Bundle exists for it. Please delete or cancel the Serial and Batch Bundle first."
+				).format(frappe.bold(self.name)),
+				title=_("Serial and Batch Bundle Exists"),
+			)
 
 	def _get_linked_submitted_documents(self, changed_fields: list[str]) -> dict[str, str] | None:
 		linked_doctypes = [

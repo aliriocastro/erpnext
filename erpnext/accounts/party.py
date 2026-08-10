@@ -48,6 +48,25 @@ SALES_TRANSACTION_TYPES = {
 }
 TRANSACTION_TYPES = PURCHASE_TRANSACTION_TYPES | SALES_TRANSACTION_TYPES
 
+# Party-derived fields that must NOT be auto-copied by `get_mapped_doc` when the
+# source and target documents belong to different parties (e.g. Sales Order →
+# Purchase Order or inter-company Sales Invoice → Purchase Invoice).
+CROSS_PARTY_FIELD_NO_MAP = [
+	"tax_category",
+	"tax_id",
+	"tax_withholding_category",
+	"taxes_and_charges",
+	"address_display",
+	"contact_display",
+	"contact_mobile",
+	"contact_email",
+	"contact_person",
+	"shipping_address",
+	"dispatch_address",
+	"payment_terms_template",
+	"language",
+]
+
 
 class DuplicatePartyAccountError(frappe.ValidationError):
 	pass
@@ -412,6 +431,17 @@ def get_party_account(party_type, party=None, company=None, include_advance=Fals
 	Will first search in party (Customer / Supplier) record, if not found,
 	will search in group (Customer Group / Supplier Group),
 	finally will return default."""
+
+	def account_perm_check(account):
+		ptype = "select" if frappe.only_has_select_perm("Account") else "read"
+		if frappe.has_permission("Account", ptype, account):
+			return
+
+		# Using custom message to prevent data leak in case of `apply_strict_permission` is enabled.
+		frappe.throw(
+			_("User don't have permissions to select/read this account."), exc=frappe.PermissionError
+		)
+
 	if not party_type:
 		frappe.throw(_("Party Type is mandatory"))
 	if not company:
@@ -422,44 +452,68 @@ def get_party_account(party_type, party=None, company=None, include_advance=Fals
 			"default_receivable_account" if party_type == "Customer" else "default_payable_account"
 		)
 
-		return frappe.get_cached_value("Company", company, default_account_name)
-
-	account = frappe.db.get_value(
-		"Party Account", {"parenttype": party_type, "parent": party, "company": company}, "account"
-	)
-
-	if not account and party_type in ["Customer", "Supplier"]:
-		party_group_doctype = "Customer Group" if party_type == "Customer" else "Supplier Group"
-		group = frappe.get_cached_value(party_type, party, scrub(party_group_doctype))
+		account = frappe.get_cached_value("Company", company, default_account_name)
+	else:
 		account = frappe.db.get_value(
-			"Party Account",
-			{"parenttype": party_group_doctype, "parent": group, "company": company},
-			"account",
+			"Party Account", {"parenttype": party_type, "parent": party, "company": company}, "account"
 		)
 
-	if not account and party_type in ["Customer", "Supplier"]:
-		default_account_name = (
-			"default_receivable_account" if party_type == "Customer" else "default_payable_account"
-		)
-		account = frappe.get_cached_value("Company", company, default_account_name)
+		if not account and party_type in ["Customer", "Supplier"]:
+			party_group_doctype = "Customer Group" if party_type == "Customer" else "Supplier Group"
+			group = frappe.get_cached_value(party_type, party, scrub(party_group_doctype))
+			account = frappe.db.get_value(
+				"Party Account",
+				{"parenttype": party_group_doctype, "parent": group, "company": company},
+				"account",
+			)
 
-	if not account:
-		existing_gle_currency = get_party_gle_currency(party_type, party, company)
-		if existing_gle_currency:
-			account = get_party_gle_account(party_type, party, company)
+		# LABOTECH: la cuenta derivada de los asientos GL es SOLO fallback, nunca un override.
+		#
+		# WHY: operamos clientes en dos monedas (VES primaria / USD secundaria) y un mismo
+		# tercero puede acumular asientos en una moneda distinta a la de su cuenta por cobrar
+		# configurada. El upstream, si detecta que la moneda de los GL Entries existentes no
+		# coincide con la de la cuenta configurada, REEMPLAZA la cuenta por la derivada del
+		# historial contable (get_party_gle_account). Eso cambia en silencio la cuenta de un
+		# cliente ya configurado y manda la factura al receivable equivocado.
+		#
+		# Por eso: si el Party Account (o el del grupo) ya resolvió una cuenta, se respeta tal
+		# cual; solo cuando no hay ninguna configurada caemos al historial GL, y si tampoco hay
+		# historial siguen los defaults de la Company de abajo.
+		#
+		# Orden resultante: party account -> group account -> GLE account -> default
+		# receivable/payable de la Company -> default por tipo de party.
+		#
+		# Ver también validate_party_gle_currency() más abajo, que desactiva la validación
+		# equivalente. Si alguna vez se opera en una sola moneda, ambas pueden revertirse a
+		# upstream. Customización introducida en e4e404fc3c.
+		if not account:
+			existing_gle_currency = get_party_gle_currency(party_type, party, company)
+			if existing_gle_currency:
+				account = get_party_gle_account(party_type, party, company)
 
-	# get default account on the basis of party type
-	if not account:
-		account_type = frappe.get_cached_value("Party Type", party_type, "account_type")
-		default_account_name = "default_" + account_type.lower() + "_account"
-		account = frappe.get_cached_value("Company", company, default_account_name)
+		if not account and party_type in ["Customer", "Supplier"]:
+			default_account_name = (
+				"default_receivable_account" if party_type == "Customer" else "default_payable_account"
+			)
+			account = frappe.get_cached_value("Company", company, default_account_name)
 
-	if include_advance and party_type in ["Customer", "Supplier", "Student"]:
+		# get default account on the basis of party type
+		if not account:
+			account_type = frappe.get_cached_value("Party Type", party_type, "account_type")
+			default_account_name = "default_" + account_type.lower() + "_account"
+			account = frappe.get_cached_value("Company", company, default_account_name)
+
+	if account:
+		account_perm_check(account)
+
+	if include_advance and party and party_type in ["Customer", "Supplier", "Student"]:
 		advance_account = get_party_advance_account(party_type, party, company)
+
 		if advance_account:
+			account_perm_check(advance_account)
 			return [account, advance_account]
-		else:
-			return [account]
+
+		return [account]
 
 	return account
 
@@ -487,11 +541,6 @@ def get_party_advance_account(party_type, party, company):
 		account = frappe.get_cached_value("Company", company, account_name)
 
 	return account
-
-
-@frappe.whitelist()
-def get_party_bank_account(party_type, party):
-	return frappe.db.get_value("Bank Account", {"party_type": party_type, "party": party, "is_default": 1})
 
 
 def get_party_account_currency(party_type, party, company):
@@ -528,11 +577,19 @@ def get_party_gle_currency(party_type, party, company):
 
 def get_party_gle_account(party_type, party, company):
 	def generator():
-		existing_gle_account = frappe.db.sql(
-			"""select account from `tabGL Entry`
-			where docstatus=1 and company=%(company)s and party_type=%(party_type)s and party=%(party)s
-			limit 1""",
-			{"company": company, "party_type": party_type, "party": party},
+		gl = qb.DocType("GL Entry")
+		existing_gle_account = (
+			qb.from_(gl)
+			.select(gl.account)
+			.where(
+				(gl.docstatus == 1)
+				& (gl.company == company)
+				& (gl.party_type == party_type)
+				& (gl.party == party)
+				& (gl.is_cancelled == 0)
+			)
+			.limit(1)
+			.run()
 		)
 
 		return existing_gle_account[0][0] if existing_gle_account else None
@@ -549,7 +606,17 @@ def validate_party_gle_currency(party_type, party, company, party_account_curren
 
 	existing_gle_currency = get_party_gle_currency(party_type, party, company)
 
-	return  # skip currency validation for multi-currency scenarios
+	# LABOTECH: validación de moneda desactivada a propósito.
+	#
+	# WHY: contraparte de la customización en get_party_account(). Con clientes en dos monedas
+	# (VES primaria / USD secundaria) un tercero puede tener asientos previos en una moneda y
+	# una cuenta por cobrar configurada en otra — situación legítima aquí. Upstream lanza
+	# InvalidAccountCurrency y bloquea el guardado del documento. Retornamos antes de la
+	# comprobación para permitirlo; la cuenta correcta ya la garantiza get_party_account().
+	#
+	# El código de abajo se deja intacto (no borrado) para que el diff contra upstream sea
+	# mínimo y revertir sea quitar este return. Customización introducida en e4e404fc3c.
+	return
 
 	if existing_gle_currency and party_account_currency != existing_gle_currency:
 		frappe.throw(
@@ -811,11 +878,13 @@ def validate_account_party_type(self):
 
 
 def get_dashboard_info(party_type, party, loyalty_program=None):
+	doctype = "Sales Invoice" if party_type == "Customer" else "Purchase Invoice"
+	if not frappe.has_permission(doctype, "read"):
+		return None
+
 	current_fiscal_year = get_fiscal_year(nowdate(), as_dict=True)
 
-	doctype = "Sales Invoice" if party_type == "Customer" else "Purchase Invoice"
-
-	companies = frappe.get_all(
+	companies = frappe.get_list(
 		doctype, filters={"docstatus": 1, party_type.lower(): party}, distinct=1, fields=["company"]
 	)
 
@@ -899,6 +968,15 @@ def get_dashboard_info(party_type, party, loyalty_program=None):
 
 		if party_type == "Supplier":
 			info["total_unpaid"] = -1 * info["total_unpaid"]
+
+		if info["total_unpaid"] < 0:
+			info["balance_label"] = (
+				"Total Advance Paid" if party_type == "Supplier" else "Total Advance Received"
+			)
+			info["balance_amount"] = abs(info["total_unpaid"])
+		else:
+			info["balance_label"] = "Total Unpaid"
+			info["balance_amount"] = info["total_unpaid"]
 
 		company_wise_info.append(info)
 
