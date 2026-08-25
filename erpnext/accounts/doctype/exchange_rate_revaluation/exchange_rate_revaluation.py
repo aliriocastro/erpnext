@@ -94,8 +94,6 @@ class ExchangeRateRevaluation(Document):
 
 	@frappe.whitelist()
 	def check_journal_and_reversal(self):
-		exchange_gain_loss_account = self.get_for_unrealized_gain_loss_account()
-
 		journals_posted = False
 		reversals_posted = False
 
@@ -116,23 +114,13 @@ class ExchangeRateRevaluation(Document):
 			.run(pluck="name")
 		)
 		if journals:
-			gle = qb.DocType("GL Entry")
-			total_amt = (
-				qb.from_(gle)
-				.select((Sum(gle.credit) - Sum(gle.debit)).as_("total_amount"))
-				.where(
-					(gle.voucher_type == "Journal Entry")
-					& (gle.voucher_no.isin(journals))
-					& (gle.account == exchange_gain_loss_account)
-					& (gle.is_cancelled == 0)
-				)
-				.run()
-			)
-
-			if total_amt and total_amt[0][0] == self.total_gain_loss:
-				journals_posted = True
-			else:
-				journals_posted = False
+			# Fork Labotech: upstream exigía igualdad exacta entre lo asentado en el
+			# gain/loss account y self.total_gain_loss; con redondeo acumulado en
+			# cientos de filas (o filas de signos cruzados) nunca cuadra, el botón
+			# "Create Journal Entries" reaparece en el ERR ya asentado y permite
+			# duplicar el JV. Basta la existencia de un JV submitted sin reversar
+			# que referencie este ERR (el query de arriba ya filtra exactamente eso).
+			journals_posted = True
 
 		# reverse journals
 		reverse_journals = (
@@ -283,10 +271,27 @@ class ExchangeRateRevaluation(Document):
 		if account_details:
 			# Handle Accounts with balance in both Account/Base Currency
 			for d in [x for x in account_details if not x.zero_balance]:
-				current_average_exchange_rate = (
-					d.balance / d.balance_in_account_currency if d.balance > 0 else 0
-				)
 				new_exchange_rate = get_exchange_rate(d.account_currency, company_currency, posting_date)
+				# Fork Labotech (hiperinflación): upstream solo protege la división por
+				# cero, y con signos cruzados (base vs moneda de cuenta) la tasa promedio
+				# sale negativa y rompe el JV (débitos negativos). Tampoco puede quedar
+				# en 0: el JV de revaluación falla en validate con "Row X: Exchange Rate
+				# is mandatory". Un balance negativo normal (neg/neg) da tasa positiva
+				# válida y autoconsistente (acc_bal * tasa == base_bal), así que solo se
+				# descarta la tasa promedio cuando no es positiva. Limitación conocida:
+				# en filas de signos cruzados el par del JV no puede llevar la cuenta
+				# exactamente a acc_bal * new_rate (ninguna tasa positiva lo logra);
+				# queda un residual en base que corridas futuras re-detectan.
+				current_average_exchange_rate = (
+					d.balance / d.balance_in_account_currency if d.balance_in_account_currency else 0
+				)
+				if current_average_exchange_rate <= 0:
+					last_gle_rate = flt(
+						calculate_exchange_rate_using_last_gle(company, d.account, d.party_type, d.party)
+					)
+					current_average_exchange_rate = (
+						last_gle_rate if last_gle_rate > 0 else new_exchange_rate
+					)
 				new_balance_in_base_currency = flt(d.balance_in_account_currency * new_exchange_rate)
 				gain_loss = flt(new_balance_in_base_currency, precision) - flt(d.balance, precision)
 
@@ -661,14 +666,21 @@ def calculate_exchange_rate_using_last_gle(company, account, party_type, party):
 		if party:
 			conditions.append(gl.party == party)
 
-		voucher_type, voucher_no = (
+		# Fork Labotech: sin ningún GLE que cumpla las condiciones (montos > 0 en
+		# base Y en moneda de cuenta), .run()[0] lanzaba IndexError y tumbaba
+		# get_accounts_data completo. Alcanzable: cuentas cuyos GLEs solo tienen
+		# montos en una de las dos monedas (p.ej. los propios JVs de zero-balance).
+		last_voucher = (
 			qb.from_(gl)
 			.select(gl.voucher_type, gl.voucher_no)
 			.where(Criterion.all(conditions))
 			.orderby(gl.posting_date, order=Order.desc)
 			.limit(1)
-			.run()[0]
+			.run()
 		)
+		if not last_voucher:
+			return None
+		voucher_type, voucher_no = last_voucher[0]
 
 		last_exchange_rate = (
 			qb.from_(gl)

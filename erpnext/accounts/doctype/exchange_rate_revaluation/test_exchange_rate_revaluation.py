@@ -377,3 +377,154 @@ class TestExchangeRateRevaluation(AccountsTestMixin, FrappeTestCase):
 			"Journal Entry", filters={"reversal_of": err_journals.get("revaluation_jv")}, pluck="name"
 		)
 		self.assertIsNotNone(reverse_jv)
+
+	@change_settings(
+		"Accounts Settings",
+		{"allow_multi_currency_invoices_against_single_party_account": 1, "allow_stale": 0},
+	)
+	def test_06_revaluation_of_negative_forex_balance(self):
+		"""
+		Regresión fork Labotech: un balance negativo (neg base / neg moneda de
+		cuenta) debe conservar tasa promedio positiva; si queda en 0, el JV de
+		revaluación falla con "Row X: Exchange Rate is mandatory".
+		"""
+		# Anticipo de cliente: deja Debtors USD en -100 USD / -8000 base
+		je = frappe.new_doc("Journal Entry")
+		je.company = self.company
+		je.posting_date = today()
+		je.multi_currency = 1
+		je.append(
+			"accounts",
+			{
+				"account": self.debtors_usd,
+				"party_type": "Customer",
+				"party": self.customer,
+				"account_currency": "USD",
+				"exchange_rate": 80,
+				"credit_in_account_currency": 100,
+				"cost_center": self.cost_center,
+			},
+		)
+		je.append(
+			"accounts",
+			{
+				"account": self.cash,
+				"debit_in_account_currency": 8000,
+				"cost_center": self.cost_center,
+			},
+		)
+		je.save().submit()
+
+		err = frappe.new_doc("Exchange Rate Revaluation")
+		err.company = self.company
+		err.posting_date = today()
+		err.fetch_and_calculate_accounts_data()
+		self.assertEqual(len(err.accounts), 1)
+
+		row = err.accounts[0]
+		# la tasa promedio de un balance negativo (neg/neg) es positiva
+		self.assertEqual(flt(row.current_exchange_rate), 80.0)
+
+		row.new_exchange_rate = 85
+		row.new_balance_in_base_currency = flt(
+			row.new_exchange_rate * flt(row.balance_in_account_currency)
+		)
+		row.gain_loss = row.new_balance_in_base_currency - flt(row.balance_in_base_currency)
+		err.set_total_gain_loss()
+		err = err.save().submit()
+
+		# antes del fix, current_exchange_rate quedaba en 0 (el assert de la tasa,
+		# arriba, falla); en producción ese 0 llegaba al JV y lanzaba
+		# "Row X: Exchange Rate is mandatory" (journal_entry.py:919)
+		err_journals = err.make_jv_entries()
+		revaluation_je = frappe.get_doc("Journal Entry", err_journals.get("revaluation_jv"))
+		revaluation_je.submit()
+		revaluation_je.reload()
+		self.assertEqual(revaluation_je.total_debit, 8500.0)
+
+		# la cuenta queda revaluada exactamente a -100 USD * 85 en base
+		acc_balance = frappe.db.get_all(
+			"GL Entry",
+			filters={"account": self.debtors_usd, "is_cancelled": 0},
+			fields=[
+				"sum(debit)-sum(credit) as balance",
+				"sum(debit_in_account_currency)-sum(credit_in_account_currency) as balance_acc",
+			],
+		)[0]
+		self.assertEqual(flt(acc_balance.balance), -8500.0)
+		self.assertEqual(flt(acc_balance.balance_acc), -100.0)
+
+	@change_settings(
+		"Accounts Settings",
+		{"allow_multi_currency_invoices_against_single_party_account": 1, "allow_stale": 0},
+	)
+	def test_07_revaluation_with_cross_sign_balance(self):
+		"""
+		Regresión fork Labotech: con signos cruzados (+5 USD / -550 base) la tasa
+		promedio es negativa e inusable; se usa la tasa del último GLE como
+		current_exchange_rate y el JV debe poder crearse y someterse.
+		"""
+
+		def make_je(posting_date, debit_usd=0, credit_usd=0, rate=80):
+			je = frappe.new_doc("Journal Entry")
+			je.company = self.company
+			je.posting_date = posting_date
+			je.multi_currency = 1
+			base = flt((debit_usd or credit_usd) * rate)
+			je.append(
+				"accounts",
+				{
+					"account": self.debtors_usd,
+					"party_type": "Customer",
+					"party": self.customer,
+					"account_currency": "USD",
+					"exchange_rate": rate,
+					"debit_in_account_currency": debit_usd,
+					"credit_in_account_currency": credit_usd,
+					"cost_center": self.cost_center,
+				},
+			)
+			je.append(
+				"accounts",
+				{
+					"account": self.cash,
+					"debit_in_account_currency": base if credit_usd else 0,
+					"credit_in_account_currency": base if debit_usd else 0,
+					"cost_center": self.cost_center,
+				},
+			)
+			je.save().submit()
+			return je
+
+		# ayer: +100 USD @80 (+8000 base); hoy: -95 USD @90 (-8550 base)
+		make_je(add_days(today(), -1), debit_usd=100, rate=80)
+		make_je(today(), credit_usd=95, rate=90)
+		# posición cruzada: +5 USD / -550 base → tasa promedio -110
+
+		err = frappe.new_doc("Exchange Rate Revaluation")
+		err.company = self.company
+		err.posting_date = today()
+		err.fetch_and_calculate_accounts_data()
+		self.assertEqual(len(err.accounts), 1)
+
+		row = err.accounts[0]
+		self.assertEqual(flt(row.balance_in_account_currency), 5.0)
+		self.assertEqual(flt(row.balance_in_base_currency), -550.0)
+		# fallback: la tasa del último GLE (el JE de hoy @90); nunca 0 ni negativa
+		self.assertEqual(flt(row.current_exchange_rate), 90.0)
+
+		row.new_exchange_rate = 85
+		row.new_balance_in_base_currency = flt(
+			row.new_exchange_rate * flt(row.balance_in_account_currency)
+		)
+		row.gain_loss = row.new_balance_in_base_currency - flt(row.balance_in_base_currency)
+		err.set_total_gain_loss()
+		err = err.save().submit()
+
+		err_journals = err.make_jv_entries()
+		self.assertIsNotNone(err_journals.get("revaluation_jv"))
+		frappe.get_doc("Journal Entry", err_journals.get("revaluation_jv")).submit()
+
+		# tras someter el JV, el ERR debe reconocer el asiento (guard anti-duplicado)
+		ret = err.check_journal_and_reversal()
+		self.assertTrue(ret.get("journals_posted"))
