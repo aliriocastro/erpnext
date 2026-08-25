@@ -122,6 +122,23 @@ class ExchangeRateRevaluation(Document):
 			# que referencie este ERR (el query de arriba ya filtra exactamente eso).
 			journals_posted = True
 
+		# Fork Labotech: make_jv_entries puede dejar más de un borrador (par
+		# estándar + cruzadas + zero-balance); al someter uno, el botón cambia y
+		# los otros quedan fáciles de olvidar. El JS los muestra como aviso.
+		draft_journals = (
+			qb.from_(je)
+			.join(jea)
+			.on(je.name == jea.parent)
+			.select(je.name)
+			.distinct()
+			.where(
+				(jea.reference_type == "Exchange Rate Revaluation")
+				& (jea.reference_name == self.name)
+				& (jea.docstatus == 0)
+			)
+			.run(pluck="name")
+		)
+
 		# reverse journals
 		reverse_journals = (
 			qb.from_(je)
@@ -141,7 +158,11 @@ class ExchangeRateRevaluation(Document):
 		else:
 			reversals_posted = False
 
-		return {"journals_posted": journals_posted, "reversals_posted": reversals_posted}
+		return {
+			"journals_posted": journals_posted,
+			"reversals_posted": reversals_posted,
+			"draft_journals": draft_journals,
+		}
 
 	def fetch_and_calculate_accounts_data(self):
 		accounts = self.get_accounts_data()
@@ -383,9 +404,14 @@ class ExchangeRateRevaluation(Document):
 		if revaluation_jv:
 			frappe.msgprint(f"Revaluation Journal: {get_link_to_form('Journal Entry', revaluation_jv.name)}")
 
+		cross_sign_jv = self.make_jv_for_cross_sign()
+		if cross_sign_jv:
+			frappe.msgprint(f"Cross Sign Journal: {get_link_to_form('Journal Entry', cross_sign_jv.name)}")
+
 		return {
 			"revaluation_jv": revaluation_jv.name if revaluation_jv else None,
 			"zero_balance_jv": zero_balance_jv.name if zero_balance_jv else None,
+			"cross_sign_jv": cross_sign_jv.name if cross_sign_jv else None,
 		}
 
 	def make_jv_for_zero_balance(self):
@@ -502,11 +528,11 @@ class ExchangeRateRevaluation(Document):
 		return journal_entry
 
 	def make_jv_for_revaluation(self):
-		if self.gain_loss_unbooked == 0:
-			return
-
-		accounts = [x for x in self.accounts if not x.zero_balance]
-		if not accounts:
+		# Fork Labotech: no gatear con gain_loss_unbooked == 0 — ese total incluye
+		# las filas cruzadas (que se asientan aparte) y una cancelación exacta
+		# entre cruzadas y normales dejaría filas normales sin asentar.
+		accounts = [x for x in self.accounts if not x.zero_balance and not is_cross_sign(x)]
+		if not any(flt(x.gain_loss) for x in accounts):
 			return
 
 		unrealized_exchange_gain_loss_account = self.get_for_unrealized_gain_loss_account()
@@ -576,28 +602,122 @@ class ExchangeRateRevaluation(Document):
 				}
 			)
 
+		# Fork Labotech: si todas las filas resultaron cruzadas el par queda vacío
+		# y la fila balanceadora 0/0 reventaría validate ("Both Debit and Credit
+		# values cannot be zero" — este voucher_type no tiene bypass).
+		if not journal_entry_accounts:
+			return None
+
 		journal_entry.set("accounts", journal_entry_accounts)
 		journal_entry.set_amounts_in_company_currency()
 		journal_entry.set_total_debit_credit()
 
 		self.gain_loss_unbooked += journal_entry.difference - self.gain_loss_unbooked
-		journal_entry.append(
-			"accounts",
-			{
-				"account": unrealized_exchange_gain_loss_account,
-				"balance": get_balance_on(unrealized_exchange_gain_loss_account),
-				"debit_in_account_currency": abs(self.gain_loss_unbooked)
-				if self.gain_loss_unbooked < 0
-				else 0,
-				"credit_in_account_currency": self.gain_loss_unbooked if self.gain_loss_unbooked > 0 else 0,
-				"cost_center": erpnext.get_default_cost_center(self.company),
-				"exchange_rate": 1,
-				"reference_type": "Exchange Rate Revaluation",
-				"reference_name": self.name,
-			},
-		)
+		if journal_entry.difference:
+			journal_entry.append(
+				"accounts",
+				{
+					"account": unrealized_exchange_gain_loss_account,
+					"balance": get_balance_on(unrealized_exchange_gain_loss_account),
+					"debit_in_account_currency": abs(self.gain_loss_unbooked)
+					if self.gain_loss_unbooked < 0
+					else 0,
+					"credit_in_account_currency": self.gain_loss_unbooked
+					if self.gain_loss_unbooked > 0
+					else 0,
+					"cost_center": erpnext.get_default_cost_center(self.company),
+					"exchange_rate": 1,
+					"reference_type": "Exchange Rate Revaluation",
+					"reference_name": self.name,
+				},
+			)
 
 		journal_entry.set_amounts_in_company_currency()
+		journal_entry.set_total_debit_credit()
+		journal_entry.save()
+		return journal_entry
+
+	def make_jv_for_cross_sign(self):
+		"""
+		Fork Labotech: filas con saldo base y saldo en moneda de cuenta de signos
+		opuestos (reconversión, asientos base-only, liquidaciones a tasas muy
+		distintas de la de origen). El par estándar no puede llevarlas a
+		acc * new_rate, así que el ajuste completo (d.gain_loss = acc*new - base)
+		se asienta base-only contra el gain/loss no realizado en un JV separado
+		tipo "Exchange Gain Or Loss": con ese voucher_type,
+		set_amounts_in_company_currency NO recalcula debit/credit desde la moneda
+		de cuenta (en el JV de revaluación la fila base-only quedaría en 0/0 y
+		validate la rechazaría). Mismo patrón que la rama base de
+		make_jv_for_zero_balance. La cuenta queda en acc * new_rate (±0.01) sin
+		tocar el saldo en moneda de cuenta; la próxima corrida del ERR la ve como
+		fila normal. El JV nace en borrador: revisar sus filas antes de asentar
+		(cuentas de partes relacionadas pueden requerir tratamiento manual).
+		"""
+		accounts = [
+			d
+			for d in self.accounts
+			if not d.zero_balance
+			and flt(d.balance_in_account_currency, d.precision("balance_in_account_currency"))
+			and flt(d.gain_loss)
+			and is_cross_sign(d)
+		]
+		if not accounts:
+			return None
+
+		unrealized_exchange_gain_loss_account = self.get_for_unrealized_gain_loss_account()
+
+		journal_entry = frappe.new_doc("Journal Entry")
+		journal_entry.voucher_type = "Exchange Gain Or Loss"
+		journal_entry.company = self.company
+		journal_entry.posting_date = self.posting_date
+		journal_entry.multi_currency = 1
+
+		journal_entry_accounts = []
+		for d in accounts:
+			# usar el gain_loss ALMACENADO: es lo que el ERR reporta y suma en
+			# total_gain_loss; recomputar acc*new - base puede diferir ±0.01
+			adjustment = flt(d.gain_loss)
+			dr_or_cr = "debit" if adjustment > 0 else "credit"
+			reverse_dr_or_cr = "credit" if dr_or_cr == "debit" else "debit"
+
+			journal_entry_accounts.append(
+				{
+					"account": d.account,
+					"party_type": d.party_type,
+					"party": d.party,
+					"account_currency": d.account_currency,
+					"balance": flt(
+						d.balance_in_account_currency, d.precision("balance_in_account_currency")
+					),
+					dr_or_cr: abs(adjustment),
+					reverse_dr_or_cr: 0,
+					"debit_in_account_currency": 0,
+					"credit_in_account_currency": 0,
+					# tasa explícita y sin flags.ignore_exchange_rate: con tasa 0 el
+					# validate lanzaría "Exchange Rate is mandatory"; los montos no
+					# dependen de ella (voucher_type salta el recálculo)
+					"exchange_rate": flt(d.new_exchange_rate),
+					"cost_center": erpnext.get_default_cost_center(self.company),
+					"reference_type": "Exchange Rate Revaluation",
+					"reference_name": self.name,
+				}
+			)
+			journal_entry_accounts.append(
+				{
+					"account": unrealized_exchange_gain_loss_account,
+					"balance": get_balance_on(unrealized_exchange_gain_loss_account),
+					reverse_dr_or_cr: abs(adjustment),
+					dr_or_cr: 0,
+					"debit_in_account_currency": 0,
+					"credit_in_account_currency": 0,
+					"exchange_rate": 1,
+					"cost_center": erpnext.get_default_cost_center(self.company),
+					"reference_type": "Exchange Rate Revaluation",
+					"reference_name": self.name,
+				}
+			)
+
+		journal_entry.set("accounts", journal_entry_accounts)
 		journal_entry.set_total_debit_credit()
 		journal_entry.save()
 		return journal_entry
@@ -644,6 +764,18 @@ class ExchangeRateRevaluation(Document):
 							frappe.bold(x), get_link_to_form("Journal Entry", reversal.name)
 						)
 					)
+
+
+def is_cross_sign(row):
+	"""
+	Fork Labotech: saldo base y saldo en moneda de cuenta con signos opuestos
+	(ambos no cero). Ninguna tasa positiva puede llevar esa posición a
+	acc * new_rate con el par estándar del JV de revaluación; se asienta aparte
+	en make_jv_for_cross_sign.
+	"""
+	return (flt(row.get("balance_in_base_currency")) > 0) != (
+		flt(row.get("balance_in_account_currency")) > 0
+	)
 
 
 def calculate_exchange_rate_using_last_gle(company, account, party_type, party):

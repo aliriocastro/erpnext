@@ -26,6 +26,15 @@ frappe.ui.form.on("Exchange Rate Revaluation", {
 				doc: frm.doc,
 				callback: function (r) {
 					if (r.message) {
+						// Fork Labotech: la creación puede dejar varios borradores
+						// (revaluación + cruzadas + zero-balance); avisar mientras
+						// alguno siga sin someter para que no quede olvidado.
+						if ((r.message.draft_journals || []).length) {
+							let links = r.message.draft_journals
+								.map((j) => frappe.utils.get_form_link("Journal Entry", j, true))
+								.join(", ");
+							frm.dashboard.set_headline(__("Draft journal entries pending submission: {0}", [links]));
+						}
 						if (!r.message.journals_posted) {
 							frm.add_custom_button(
 								__("Journal Entries"),
@@ -103,7 +112,7 @@ frappe.ui.form.on("Exchange Rate Revaluation", {
 			callback: function (r) {
 				if (r.message) {
 					let response = r.message;
-					if (response["revaluation_jv"] || response["zero_balance_jv"]) {
+					if (response["revaluation_jv"] || response["zero_balance_jv"] || response["cross_sign_jv"]) {
 						frappe.msgprint(__("Journal entries have been created"));
 					}
 				}
