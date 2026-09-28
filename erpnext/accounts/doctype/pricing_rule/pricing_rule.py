@@ -436,8 +436,13 @@ def get_pricing_rule_for_item(args, doc=None, for_validate=False):
 		}
 	)
 
+	# Labotech: una regla por cupón que se salta por falta de cupón deja la marca "[]" en la fila.
+	# Como texto es verdadera, y el guardado siguiente «quitaba» una regla que nunca se aplicó y
+	# borraba el descuento manual (COT-26-2566). Se decide con la lista ya leída, no con el texto.
+	applied_pricing_rules = get_applied_pricing_rules(args.get("pricing_rules"))
+
 	if args.ignore_pricing_rule or not args.item_code:
-		if frappe.db.exists(args.doctype, args.name) and args.get("pricing_rules"):
+		if frappe.db.exists(args.doctype, args.name) and applied_pricing_rules:
 			item_details = remove_pricing_rule_for_item(
 				args.get("pricing_rules"),
 				item_details,
@@ -449,8 +454,8 @@ def get_pricing_rule_for_item(args, doc=None, for_validate=False):
 	update_args_for_pricing_rule(args)
 
 	pricing_rules = (
-		get_applied_pricing_rules(args.get("pricing_rules"))
-		if for_validate and args.get("pricing_rules")
+		applied_pricing_rules
+		if for_validate and applied_pricing_rules
 		else get_pricing_rules(args, doc)
 	)
 
@@ -517,10 +522,20 @@ def get_pricing_rule_for_item(args, doc=None, for_validate=False):
 
 		item_details.pricing_rules = frappe.as_json([d.pricing_rule for d in rules])
 
+		# Labotech: si se saltaron todas (p. ej. se quitó el cupón por API), la regla que estaba
+		# aplicada se retira en este guardado. Antes se retiraba de rebote en el siguiente, por la marca "[]".
+		if not rules and applied_pricing_rules:
+			item_details = remove_pricing_rule_for_item(
+				args.get("pricing_rules"),
+				item_details,
+				item_code=args.get("item_code"),
+				rate=args.get("price_list_rate"),
+			)
+
 		if not doc:
 			return item_details
 
-	elif args.get("pricing_rules"):
+	elif applied_pricing_rules:
 		item_details = remove_pricing_rule_for_item(
 			args.get("pricing_rules"),
 			item_details,
