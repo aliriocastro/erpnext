@@ -127,7 +127,7 @@ class TestPaymentEntry(FrappeTestCase):
 		supplier.on_hold = 0
 		supplier.save()
 
-	def test_payment_entry_for_blocked_supplier_payments_today_date(self):
+	def test_payment_entry_for_supplier_released_today(self):
 		supplier = frappe.get_doc("Supplier", "_Test Supplier")
 		supplier.on_hold = 1
 		supplier.hold_type = "Payments"
@@ -136,13 +136,8 @@ class TestPaymentEntry(FrappeTestCase):
 
 		pi = make_purchase_invoice()
 
-		self.assertRaises(
-			frappe.ValidationError,
-			get_payment_entry,
-			dt="Purchase Invoice",
-			dn=pi.name,
-			bank_account="_Test Bank - _TC",
-		)
+		pe = get_payment_entry(dt="Purchase Invoice", dn=pi.name, bank_account="_Test Bank - _TC")
+		self.assertEqual(pe.party, supplier.name)
 
 		supplier.on_hold = 0
 		supplier.save()
@@ -167,6 +162,26 @@ class TestPaymentEntry(FrappeTestCase):
 				pass
 			else:
 				raise Exception
+
+	def test_outstanding_invoices_listed_after_supplier_release_date(self):
+		pi = make_purchase_invoice()
+		supplier = frappe.get_doc("Supplier", pi.supplier)
+		supplier.update({"on_hold": 1, "hold_type": "All", "release_date": add_days(nowdate(), -3)})
+		supplier.save()
+
+		references = get_outstanding_reference_documents(
+			{
+				"posting_date": nowdate(),
+				"company": pi.company,
+				"party_type": "Supplier",
+				"payment_type": "Pay",
+				"party": pi.supplier,
+				"party_account": pi.credit_to,
+				"get_outstanding_invoices": True,
+			}
+		)
+
+		self.assertIn(pi.name, [row.voucher_no for row in references])
 
 	def test_payment_entry_against_si_usd_to_usd(self):
 		si = create_sales_invoice(
@@ -732,6 +747,23 @@ class TestPaymentEntry(FrappeTestCase):
 		)
 
 		self.validate_gl_entries(pe.name, expected_gle)
+
+	def test_internal_transfer_rejects_same_account(self):
+		pe = frappe.new_doc("Payment Entry")
+		pe.payment_type = "Internal Transfer"
+		pe.company = "_Test Company"
+		pe.paid_from = "_Test Bank - _TC"
+		pe.paid_to = "_Test Bank - _TC"
+		pe.paid_amount = 100
+		pe.received_amount = 100
+		pe.reference_no = "same-account-transfer"
+		pe.reference_date = nowdate()
+
+		self.assertRaisesRegex(
+			frappe.ValidationError,
+			"Paid From and Paid To accounts must be different",
+			pe.insert,
+		)
 
 	def test_payment_against_negative_sales_invoice(self):
 		si1 = create_sales_invoice()

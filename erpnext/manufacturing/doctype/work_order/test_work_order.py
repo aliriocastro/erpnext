@@ -2,9 +2,23 @@
 # License: GNU General Public License v3. See license.txt
 
 
+from collections import defaultdict
+from unittest.mock import patch
+
 import frappe
 from frappe.tests.utils import FrappeTestCase, change_settings, timeout
-from frappe.utils import add_days, add_months, add_to_date, cint, flt, now, nowdate, nowtime, today
+from frappe.utils import (
+	add_days,
+	add_months,
+	add_to_date,
+	cint,
+	flt,
+	get_datetime,
+	now,
+	nowdate,
+	nowtime,
+	today,
+)
 
 from erpnext.manufacturing.doctype.job_card.job_card import JobCardCancelError
 from erpnext.manufacturing.doctype.job_card.job_card import make_stock_entry as make_stock_entry_from_jc
@@ -90,6 +104,83 @@ class TestWorkOrder(FrappeTestCase):
 		self.assertEqual(planned2, planned0 + 6)
 
 		return wo_order
+
+	def test_actual_dates_ignore_unsubmitted_stock_entries(self):
+		work_order = self.make_work_order_for_actual_dates()
+		for posting_time in ("02:00:00", "22:00:00"):
+			entry = self.make_manufacture_for_actual_dates(work_order, posting_time)
+			entry.submit()
+			entry.cancel()
+		for posting_time in ("01:30:00", "23:00:00"):
+			draft = self.make_manufacture_for_actual_dates(work_order, posting_time, qty=1)
+			entry = self.make_manufacture_for_actual_dates(work_order, "05:00:00")
+			entry.submit()
+			work_order.reload()
+			self.assertEqual(work_order.status, "Completed")
+			self.assertEqual(work_order.actual_start_date, get_datetime(f"{today()} 05:00:00"))
+			self.assertEqual(work_order.actual_end_date, work_order.actual_start_date)
+			entry.cancel()
+			draft.delete()
+
+	def test_actual_dates_recompute_on_cancellation(self):
+		work_order = self.make_work_order_for_actual_dates()
+		first = self.make_manufacture_for_actual_dates(work_order, "03:00:00", qty=1)
+		first.submit()
+		last = self.make_manufacture_for_actual_dates(work_order, "05:00:00", qty=1)
+		last.submit()
+		work_order.reload()
+		self.assertEqual(work_order.actual_start_date, get_datetime(f"{today()} 03:00:00"))
+		self.assertEqual(work_order.actual_end_date, get_datetime(f"{today()} 05:00:00"))
+
+		first.cancel()
+		work_order.reload()
+		self.assertNotEqual(work_order.status, "Completed")
+		self.assertEqual(work_order.actual_start_date, get_datetime(f"{today()} 05:00:00"))
+		self.assertIsNone(work_order.actual_end_date)
+		last.cancel()
+		work_order.reload()
+		self.assertIsNone(work_order.actual_start_date)
+		self.assertIsNone(work_order.actual_end_date)
+
+	def make_work_order_for_actual_dates(self):
+		for item in ("_Test Item", "_Test Item Home Desktop 100"):
+			test_stock_entry.make_stock_entry(
+				item_code=item,
+				target="Stores - _TC",
+				qty=100,
+				basic_rate=100,
+				posting_date=today(),
+				posting_time="01:00:00",
+			)
+		work_order = make_wo_order_test_record(qty=2, source_warehouse="Stores - _TC", skip_transfer=1)
+		self.assertFalse(work_order.operations)
+		return work_order
+
+	def make_manufacture_for_actual_dates(self, work_order, posting_time, qty=2):
+		entry = frappe.get_doc(make_stock_entry(work_order.name, "Manufacture", qty))
+		entry.update({"set_posting_time": 1, "posting_date": today(), "posting_time": posting_time})
+		return entry.insert()
+
+	def test_disassembled_qty_sums_without_float_noise(self):
+		wo = frappe.new_doc("Work Order")
+		wo.update({"docstatus": 1, "produced_qty": 0.3, "disassembled_qty": 0.1})
+		with patch.object(wo, "db_set"):
+			wo.update_disassembled_qty(0.2)
+
+		self.assertEqual(wo.disassembled_qty, 0.3)
+
+	def test_disassembly_available_qty_has_no_float_noise(self):
+		from erpnext.manufacturing.doctype.work_order.work_order import get_disassembly_available_qty
+
+		real_get_value = frappe.db.get_value
+
+		def get_value(doctype, filters=None, *args, **kwargs):
+			if doctype != "Stock Entry":
+				return real_get_value(doctype, filters, *args, **kwargs)
+			return frappe._dict(fg_completed_qty=0.3) if isinstance(filters, str) else 0.1
+
+		with patch.object(frappe.db, "get_value", side_effect=get_value):
+			self.assertEqual(get_disassembly_available_qty("Manufacture Entry"), 0.2)
 
 	def test_over_production(self):
 		wo_doc = self.check_planned_qty()
@@ -507,6 +598,15 @@ class TestWorkOrder(FrappeTestCase):
 		for stock_entry in stock_entries:
 			stock_entry.cancel()
 
+	def test_skip_transfer_work_order_completed_with_fractional_process_loss(self):
+		# 11.2 + 0.2 == 11.399999999999999 in float, which must still complete 11.4
+		work_order = frappe.new_doc("Work Order")
+		work_order.update(
+			{"docstatus": 1, "skip_transfer": 1, "qty": 11.4, "produced_qty": 11.2, "process_loss_qty": 0.2}
+		)
+
+		self.assertEqual(work_order.get_status(), "Completed")
+
 	def test_work_order_material_transferred_qty_with_process_loss(self):
 		stock_entries = []
 		item_code = make_item("_Test Item For Process Loss", {"is_stock_item": 1}).name
@@ -820,6 +920,7 @@ class TestWorkOrder(FrappeTestCase):
 				self.assertEqual(row.qty, 10)
 
 				bundle_id = frappe.get_doc("Serial and Batch Bundle", row.serial_and_batch_bundle)
+				self.assertEqual(bundle_id.company, ste1.company)
 				for bundle_row in bundle_id.get("entries"):
 					self.assertTrue(bundle_row.batch_no in batches)
 					batches.remove(bundle_row.batch_no)
@@ -834,6 +935,7 @@ class TestWorkOrder(FrappeTestCase):
 				self.assertEqual(row.qty, 20)
 
 				bundle_id = frappe.get_doc("Serial and Batch Bundle", row.serial_and_batch_bundle)
+				self.assertEqual(bundle_id.company, ste1.company)
 				for bundle_row in bundle_id.get("entries"):
 					self.assertTrue(bundle_row.batch_no in batches)
 					remaining_batches.append(bundle_row.batch_no)
@@ -1045,6 +1147,20 @@ class TestWorkOrder(FrappeTestCase):
 
 		wo.load_from_db()
 		self.assertEqual(wo.status, "Completed")
+
+		from erpnext.stock.stock_balance import get_planned_qty
+
+		completed_planned_qty = get_bin(wo.production_item, wo.fg_warehouse).planned_qty
+		expected_completed_qty = get_planned_qty(wo.production_item, wo.fg_warehouse)
+
+		se.cancel()
+		wo.reload()
+		self.assertEqual(wo.status, "In Process")
+		cancelled_planned_qty = get_bin(wo.production_item, wo.fg_warehouse).planned_qty
+		expected_cancelled_qty = get_planned_qty(wo.production_item, wo.fg_warehouse)
+
+		self.assertEqual(completed_planned_qty, expected_completed_qty)
+		self.assertEqual(cancelled_planned_qty, expected_cancelled_qty)
 
 	@timeout(seconds=60)
 	def test_job_card_scrap_item(self):
@@ -3287,6 +3403,42 @@ class TestWorkOrder(FrappeTestCase):
 
 		frappe.db.set_single_value("Manufacturing Settings", "validate_components_quantities_per_bom", 0)
 
+	def test_transferred_qty_sums_item_and_its_alternate(self):
+		# Base item + its alternate transfers must sum onto the required row, not overwrite.
+		fg_item = "Test FG Item For Alternate Transferred Qty"
+		source_warehouse = "Stores - _TC"
+		raw_material = "Test RM For Alternate Transferred Qty"
+		alternate_item = "Alternate Test RM For Alternate Transferred Qty"
+
+		make_item(fg_item, {"is_stock_item": 1})
+		for item in [raw_material, alternate_item]:
+			make_item(item, {"is_stock_item": 1, "allow_alternative_item": 1})
+			test_stock_entry.make_stock_entry(item_code=item, target=source_warehouse, qty=10, basic_rate=100)
+
+		frappe.get_doc(
+			{
+				"doctype": "Item Alternative",
+				"item_code": raw_material,
+				"alternative_item_code": alternate_item,
+				"two_way": 1,
+			}
+		).insert()
+
+		make_bom(item=fg_item, source_warehouse=source_warehouse, raw_materials=[raw_material])
+		wo = make_wo_order_test_record(item=fg_item, qty=10, source_warehouse=source_warehouse)
+
+		# 6 as the base item
+		frappe.get_doc(make_stock_entry(wo.name, "Material Transfer for Manufacture", 6)).submit()
+		# 4 as the alternate item, linked back to the base
+		alt_transfer = frappe.get_doc(make_stock_entry(wo.name, "Material Transfer for Manufacture", 4))
+		alt_transfer.items[0].item_code = alternate_item
+		alt_transfer.items[0].original_item = raw_material
+		alt_transfer.submit()
+
+		wo.reload()
+		self.assertEqual(wo.required_items[0].transferred_qty, 10)
+		self.assertEqual(wo.material_transferred_for_manufacturing, 10)
+
 	def test_components_qty_for_bom_based_manufacture_entry(self):
 		frappe.db.set_single_value("Manufacturing Settings", "backflush_raw_materials_based_on", "BOM")
 		frappe.db.set_single_value("Manufacturing Settings", "validate_components_quantities_per_bom", 1)
@@ -3798,6 +3950,151 @@ class TestWorkOrder(FrappeTestCase):
 
 		self.assertIn(extra_item, se_items)
 		self.assertNotIn(original_item, se_items)
+
+	@change_settings(
+		"Manufacturing Settings",
+		{"backflush_raw_materials_based_on": "BOM", "validate_components_quantities_per_bom": 1},
+	)
+	def test_partial_alternative_item_transfer_for_bom_based_manufacture(self):
+		source_warehouse = "Stores - _TC"
+		fg_item = make_item("Test WO Partial Alt FG", {"is_stock_item": 1}).name
+		item_a = make_item("Test WO Partial Alt RM A", {"is_stock_item": 1, "allow_alternative_item": 1}).name
+		item_b = make_item("Test WO Partial Alt RM B", {"is_stock_item": 1, "allow_alternative_item": 1}).name
+
+		if not frappe.db.exists("Item Alternative", {"item_code": item_a, "alternative_item_code": item_b}):
+			frappe.get_doc(
+				{"doctype": "Item Alternative", "item_code": item_a, "alternative_item_code": item_b}
+			).insert()
+
+		for item in (item_a, item_b):
+			test_stock_entry.make_stock_entry(item_code=item, target=source_warehouse, qty=20, basic_rate=100)
+
+		make_bom(item=fg_item, source_warehouse=source_warehouse, raw_materials=[item_a])
+		wo = make_wo_order_test_record(
+			item=fg_item, qty=10, source_warehouse=source_warehouse, do_not_save=True
+		)
+		wo.allow_alternative_item = 1
+		wo.insert()
+		wo.submit()
+
+		# 5 qty transferred as the alternative RM B
+		transfer = frappe.get_doc(make_stock_entry(wo.name, "Material Transfer for Manufacture", 5))
+		self.assertEqual(transfer.items[0].allow_alternative_item, 1)
+		transfer.items[0].item_code = item_b
+		transfer.items[0].original_item = item_a
+		transfer.items[0].allow_alternative_item = 0
+		transfer.insert()
+		# the flag is restored from the work order and the original item on save
+		self.assertEqual(transfer.items[0].allow_alternative_item, 1)
+		transfer.submit()
+
+		# remaining 5 qty transferred as RM A itself
+		transfer = frappe.get_doc(make_stock_entry(wo.name, "Material Transfer for Manufacture", 5))
+		self.assertEqual(transfer.items[0].item_code, item_a)
+		transfer.insert()
+		transfer.submit()
+
+		def get_rm_qty(stock_entry):
+			rm_qty = defaultdict(float)
+			for row in stock_entry.items:
+				if row.s_warehouse:
+					rm_qty[(row.item_code, row.original_item or None)] += flt(row.qty)
+			return dict(rm_qty)
+
+		manufacture = frappe.get_doc(make_stock_entry(wo.name, "Manufacture", 4))
+		self.assertEqual(get_rm_qty(manufacture), {(item_b, item_a): 2.0, (item_a, None): 2.0})
+		manufacture.insert()
+		manufacture.submit()
+
+		manufacture = frappe.get_doc(make_stock_entry(wo.name, "Manufacture", 6))
+		self.assertEqual(get_rm_qty(manufacture), {(item_b, item_a): 3.0, (item_a, None): 3.0})
+		manufacture.insert()
+		manufacture.submit()
+
+		wo.reload()
+		self.assertEqual(wo.produced_qty, 10)
+		self.assertEqual(len(wo.required_items), 1)
+		self.assertEqual(wo.required_items[0].item_code, item_a)
+		self.assertEqual(wo.required_items[0].transferred_qty, 10)
+		self.assertEqual(wo.required_items[0].consumed_qty, 10)
+
+	@change_settings(
+		"Manufacturing Settings",
+		{"backflush_raw_materials_based_on": "BOM", "material_consumption": 1},
+	)
+	def test_partial_alternative_item_transfer_with_material_consumption(self):
+		source_warehouse = "Stores - _TC"
+		fg_item = make_item("Test WO Partial Alt Consumption FG", {"is_stock_item": 1}).name
+		item_a = make_item("Test WO Partial Alt RM A", {"is_stock_item": 1, "allow_alternative_item": 1}).name
+		item_b = make_item("Test WO Partial Alt RM B", {"is_stock_item": 1, "allow_alternative_item": 1}).name
+
+		if not frappe.db.exists("Item Alternative", {"item_code": item_a, "alternative_item_code": item_b}):
+			frappe.get_doc(
+				{"doctype": "Item Alternative", "item_code": item_a, "alternative_item_code": item_b}
+			).insert()
+
+		for item in (item_a, item_b):
+			test_stock_entry.make_stock_entry(item_code=item, target=source_warehouse, qty=20, basic_rate=100)
+
+		make_bom(item=fg_item, source_warehouse=source_warehouse, raw_materials=[item_a])
+		wo = make_wo_order_test_record(
+			item=fg_item, qty=10, source_warehouse=source_warehouse, do_not_save=True
+		)
+		wo.allow_alternative_item = 1
+		wo.insert()
+		wo.submit()
+
+		transfer = frappe.get_doc(make_stock_entry(wo.name, "Material Transfer for Manufacture", 10))
+		transfer.items[0].qty = 6
+		transfer.items[0].item_code = item_b
+		transfer.items[0].original_item = item_a
+		transfer.append("items", {**transfer.items[0].as_dict(), "name": None, "idx": None})
+		transfer.items[1].item_code = item_a
+		transfer.items[1].original_item = None
+		transfer.items[1].qty = 4
+		transfer.insert()
+		transfer.submit()
+
+		manufacture = frappe.get_doc(make_stock_entry(wo.name, "Manufacture", 10))
+		rm_qty = defaultdict(float)
+		for row in manufacture.items:
+			if row.s_warehouse:
+				rm_qty[(row.item_code, row.original_item or None)] += flt(row.qty)
+
+		self.assertEqual(dict(rm_qty), {(item_b, item_a): 6.0, (item_a, None): 4.0})
+		manufacture.insert()
+		manufacture.submit()
+
+	@change_settings("Manufacturing Settings", {"validate_components_quantities_per_bom": 1})
+	def test_bom_quantity_check_compares_alternatives_in_stock_uom(self):
+		from unittest.mock import patch
+
+		from erpnext.stock.doctype.stock_entry.stock_entry import StockEntry
+
+		stock_entry = frappe.new_doc("Stock Entry")
+		stock_entry.update({"purpose": "Manufacture", "fg_completed_qty": 1, "bom_no": "_Test BOM"})
+		for item_code, qty, conversion_factor, original_item in (
+			("_Test RM A", 5, 10, None),
+			("_Test RM B", 50, 1, "_Test RM A"),
+		):
+			stock_entry.append(
+				"items",
+				{
+					"item_code": item_code,
+					"original_item": original_item,
+					"s_warehouse": "Stores - _TC",
+					"qty": qty,
+					"conversion_factor": conversion_factor,
+					"transfer_qty": qty * conversion_factor,
+				},
+			)
+
+		raw_materials = {"_Test RM A": frappe._dict(item_code="_Test RM A", qty=10, conversion_factor=10)}
+		with patch.object(StockEntry, "get_bom_raw_materials", return_value=raw_materials):
+			stock_entry.validate_component_and_quantities()
+
+			stock_entry.items[1].transfer_qty = 40
+			self.assertRaises(frappe.ValidationError, stock_entry.validate_component_and_quantities)
 
 
 def make_stock_in_entries_and_get_batches(rm_item, source_warehouse, wip_warehouse):

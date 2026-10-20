@@ -186,33 +186,33 @@ class LandedCostVoucher(Document):
 
 	def set_applicable_charges_on_item(self):
 		if self.get("taxes") and self.distribute_charges_based_on != "Distribute Manually":
-			total_item_cost = 0.0
+			items = self.get("items")
 			total_charges = 0.0
-			item_count = 0
 			based_on_field = frappe.scrub(self.distribute_charges_based_on)
 
-			for item in self.get("items"):
-				total_item_cost += item.get(based_on_field)
+			total_item_cost = sum(flt(item.get(based_on_field)) for item in items)
+			if items:
+				total_item_cost = flt(total_item_cost, items[0].precision(based_on_field))
 
-			for item in self.get("items"):
-				if not total_item_cost and not item.get(based_on_field):
-					frappe.throw(
-						_(
-							"It's not possible to distribute charges equally when total amount is zero, please set 'Distribute Charges Based On' as 'Quantity'"
-						)
+			if not total_item_cost:
+				frappe.throw(
+					_("Total {0} of all items is zero. Set 'Distribute Charges Based On' to {1}.").format(
+						self.distribute_charges_based_on,
+						_("Qty") if based_on_field == "amount" else _("Amount"),
 					)
+				)
 
+			precision = items[0].precision("applicable_charges")
+			for item in items:
 				item.applicable_charges = flt(
 					flt(item.get(based_on_field))
 					* (flt(self.total_taxes_and_charges) / flt(total_item_cost)),
-					item.precision("applicable_charges"),
+					precision,
 				)
 				total_charges += item.applicable_charges
-				item_count += 1
 
-			if total_charges != self.total_taxes_and_charges:
-				diff = self.total_taxes_and_charges - total_charges
-				self.get("items")[item_count - 1].applicable_charges += diff
+			diff = flt(self.total_taxes_and_charges - total_charges, precision)
+			absorb_rounding_difference(items, diff, precision, self.total_taxes_and_charges)
 
 	def validate_applicable_charges_for_item(self):
 		if self.distribute_charges_based_on == "Distribute Manually" and len(self.taxes) > 1:
@@ -290,7 +290,7 @@ class LandedCostVoucher(Document):
 			# update stock & gl entries for cancelled state of PR
 			doc.docstatus = 2
 			doc.update_stock_ledger(allow_negative_stock=True, via_landed_cost_voucher=True)
-			doc.make_gl_entries_on_cancel()
+			doc.make_gl_entries_on_cancel(from_repost=True)
 
 			# update stock & gl entries for submit state of PR
 			doc.docstatus = 1
@@ -364,8 +364,8 @@ def get_pr_items(purchase_receipt):
 			pr_item.item_code,
 			pr_item.description,
 			pr_item.qty,
-			pr_item.base_rate,
-			pr_item.base_amount,
+			pr_item.base_net_rate.as_("base_rate"),
+			pr_item.base_net_amount.as_("base_amount"),
 			pr_item.name,
 			pr_item.cost_center,
 			pr_item.is_fixed_asset,
@@ -379,3 +379,15 @@ def get_pr_items(purchase_receipt):
 		.orderby(pr_item.idx)
 		.run(as_dict=True)
 	)
+
+
+def absorb_rounding_difference(items, diff, precision, total):
+	sign = -1 if flt(total) < 0 else 1
+	for item in reversed(items):
+		if not diff:
+			break
+
+		share = flt(item.applicable_charges) * sign
+		adjustment = diff if diff * sign > 0 else sign * max(diff * sign, -share)
+		item.applicable_charges = flt(flt(item.applicable_charges) + adjustment, precision)
+		diff = flt(diff - adjustment, precision)

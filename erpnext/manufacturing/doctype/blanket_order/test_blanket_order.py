@@ -1,7 +1,7 @@
 # Copyright (c) 2018, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests.utils import FrappeTestCase, change_settings
 from frappe.utils import add_months, today
 
 from erpnext import get_company_currency
@@ -91,6 +91,48 @@ class TestBlanketOrder(FrappeTestCase):
 		frappe.db.set_single_value("Buying Settings", "blanket_order_allowance", 10)
 		po.submit()
 
+	@change_settings("Selling Settings", {"blanket_order_allowance": 0})
+	@change_settings("Buying Settings", {"blanket_order_allowance": 0})
+	@change_settings(
+		"Stock Settings",
+		{"over_delivery_receipt_allowance": 10, "role_allowed_to_over_deliver_receive": "Stock Manager"},
+	)
+	def test_stock_over_delivery_role_does_not_bypass_blanket_order_allowance(self):
+		test_user = frappe.get_doc("User", "test@example.com")
+		test_user.add_roles("Accounts User", "Stock Manager")
+
+		frappe.clear_cache()
+		for blanket_order_type, doctype, date_field in (
+			("Selling", "Sales Order", "delivery_date"),
+			("Purchasing", "Purchase Order", "schedule_date"),
+		):
+			bo = make_blanket_order(blanket_order_type=blanket_order_type, quantity=100)
+			frappe.flags.args.doctype = doctype
+			order = make_order(bo.name)
+			order.currency = get_company_currency(order.company)
+			setattr(order, date_field, today())
+			order.items[0].qty = 110
+
+			with self.set_user("test@example.com"):
+				order.flags.ignore_permissions = True
+				self.assertRaises(frappe.ValidationError, order.submit)
+
+	@change_settings("Buying Settings", {"blanket_order_allowance": 0})
+	def test_last_fraction_of_blanket_order_can_be_ordered(self):
+		item = make_item(properties={"stock_uom": "Kg", "is_stock_item": 0}).name
+		bo = make_blanket_order(blanket_order_type="Purchasing", quantity=1, item_code=item)
+
+		frappe.flags.args.doctype = "Purchase Order"
+		for qty in (0.9, 0.1):
+			po = make_order(bo.name)
+			po.currency = get_company_currency(po.company)
+			po.schedule_date = today()
+			po.items[0].qty = qty
+			po.submit()
+
+		bo.reload()
+		self.assertEqual(bo.items[0].ordered_qty, 1)
+
 	def test_party_item_code(self):
 		item_doc = make_item("_Test Item 1 for Blanket Order")
 		item_code = item_doc.name
@@ -112,6 +154,15 @@ class TestBlanketOrder(FrappeTestCase):
 
 		bo = make_blanket_order(blanket_order_type="Purchasing", supplier=supplier, item_code=item_code)
 		self.assertEqual(bo.items[0].party_item_code, "SUPP-PART-1")
+
+	@change_settings("Buying Settings", {"blanket_order_allowance": 10})
+	def test_blanket_order_allowance_applies_to_blanket_order_qty(self):
+		bo = make_blanket_order(blanket_order_type="Purchasing", quantity=100)
+		orders = [make_purchase_order_against(bo, qty=qty) for qty in (90, 15, 10)]
+		orders[0].submit()
+		orders[1].submit()
+
+		self.assertRaises(frappe.ValidationError, orders[2].submit)
 
 
 def make_blanket_order(**args):
@@ -140,3 +191,12 @@ def make_blanket_order(**args):
 	bo.insert()
 	bo.submit()
 	return bo
+
+
+def make_purchase_order_against(blanket_order, qty):
+	frappe.flags.args.doctype = "Purchase Order"
+	po = make_order(blanket_order.name)
+	po.currency = get_company_currency(po.company)
+	po.schedule_date = today()
+	po.items[0].qty = qty
+	return po

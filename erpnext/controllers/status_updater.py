@@ -312,13 +312,12 @@ class StatusUpdater(Document):
 			qty_or_amount,
 		)
 
-		role_allowed_to_over_deliver_receive = frappe.db.get_single_value(
-			"Stock Settings", "role_allowed_to_over_deliver_receive"
-		)
-		role_allowed_to_over_bill = frappe.db.get_single_value(
-			"Accounts Settings", "role_allowed_to_over_bill"
-		)
-		role = role_allowed_to_over_deliver_receive if qty_or_amount == "qty" else role_allowed_to_over_bill
+		role = None
+		if qty_or_amount == "qty":
+			if args.get("overflow_type") in ("delivery", "receipt"):
+				role = frappe.get_single_value("Stock Settings", "role_allowed_to_over_deliver_receive")
+		else:
+			role = frappe.get_single_value("Accounts Settings", "role_allowed_to_over_bill")
 
 		overflow_percent = (
 			(item[args["target_field"]] - item[args["target_ref_field"]]) / item[args["target_ref_field"]]
@@ -470,8 +469,9 @@ class StatusUpdater(Document):
 		if args.get("percent_join_field_parent"):
 			# if reference to target doc where % is to be updated, is
 			# in source doc's parent form, consider percent_join_field_parent
-			args["name"] = self.get(args["percent_join_field_parent"])
-			self._update_percent_field(args, update_modified)
+			if name := self.get(args["percent_join_field_parent"]):
+				args["name"] = name
+				self._update_percent_field(args, update_modified)
 		else:
 			distinct_transactions = set(
 				d.get(args["percent_join_field"]) for d in self.get_all_children(args["source_dt"])

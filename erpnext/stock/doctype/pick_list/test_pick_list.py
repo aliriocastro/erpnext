@@ -30,6 +30,24 @@ test_dependencies = ["Item", "Sales Invoice", "Stock Entry", "Batch"]
 
 
 class TestPickList(FrappeTestCase):
+	def test_delivery_mapping_requires_pick_list_read_permission(self):
+		pick_list = frappe.get_doc(
+			{
+				"doctype": "Pick List",
+				"company": "_Test Company",
+				"purpose": "Delivery",
+				"pick_manually": 1,
+			}
+		).insert()
+		user = frappe.session.user
+		try:
+			frappe.set_user("Guest")
+			for mapper in (create_delivery_note, create_dn_for_pick_lists):
+				with self.subTest(mapper=mapper.__name__), self.assertRaises(frappe.PermissionError):
+					mapper(pick_list.name)
+		finally:
+			frappe.set_user(user)
+
 	def test_pick_list_picks_warehouse_for_each_item(self):
 		item_code = make_item().name
 		try:
@@ -880,6 +898,62 @@ class TestPickList(FrappeTestCase):
 		pl1.cancel()
 		pl.cancel()
 
+	def test_picklist_deducts_quantities_from_multiple_bundle_batches(self):
+		warehouse = "_Test Warehouse - _TC"
+		item = make_item(properties={"is_stock_item": 1, "has_batch_no": 1})
+		batches = [
+			frappe.get_doc(doctype="Batch", item=item.name, batch_id=f"{item.name}-{index}").insert().name
+			for index in (1, 2)
+		]
+		make_stock_entry(
+			item=item.name,
+			to_warehouse=warehouse,
+			qty=50,
+			basic_rate=100,
+			batches={batches[0]: 30, batches[1]: 20},
+		)
+		pick_list = frappe.get_doc(
+			doctype="Pick List",
+			company="_Test Company",
+			purpose="Delivery",
+			pick_manually=1,
+			locations=[
+				{
+					"item_code": item.name,
+					"warehouse": warehouse,
+					"qty": 15,
+					"stock_qty": 15,
+					"picked_qty": 15,
+					"uom": item.stock_uom,
+					"stock_uom": item.stock_uom,
+					"conversion_factor": 1,
+				}
+			],
+		).insert()
+		bundle = make_serial_batch_bundle(
+			{
+				"item_code": item.name,
+				"warehouse": warehouse,
+				"voucher_type": "Pick List",
+				"voucher_no": pick_list.name,
+				"qty": -15,
+				"batches": {batches[0]: 10, batches[1]: 5},
+				"do_not_submit": True,
+			}
+		)
+		pick_list.locations[0].serial_and_batch_bundle = bundle.name
+		pick_list.save()
+		self.assertFalse(pick_list.locations[0].batch_no)
+		self.assertEqual(len(bundle.entries), 2)
+
+		sales_order = make_sales_order(item_code=item.name, warehouse=warehouse, qty=50, rate=100)
+		next_pick_list = create_pick_list(sales_order.name)
+
+		self.assertEqual(
+			{row.batch_no: row.stock_qty for row in next_pick_list.locations},
+			{batches[0]: 20, batches[1]: 15},
+		)
+
 	def test_picklist_for_serial_item(self):
 		warehouse = "_Test Warehouse - _TC"
 		item = make_item(
@@ -1077,6 +1151,58 @@ class TestPickList(FrappeTestCase):
 		pick_list.reload()
 		self.assertEqual(pick_list.locations[0].transferred_qty, 4)
 		self.assertEqual(pick_list.status, "Partially Transferred")
+
+	def test_get_items_keeps_pick_list_rows_on_stock_entry(self):
+		"""Entering fg_completed_qty on a Stock Entry mapped from a Pick List triggers get_items();
+		it must not refetch from the BOM, or the pick_list_item links transferred_qty rides on are
+		lost and the Pick List stays Open with every row offered again."""
+		from erpnext.manufacturing.doctype.production_plan.test_production_plan import make_bom
+		from erpnext.manufacturing.doctype.work_order.work_order import (
+			create_pick_list as pick_list_for_wo,
+		)
+		from erpnext.manufacturing.doctype.work_order.work_order import make_work_order
+		from erpnext.stock.doctype.warehouse.test_warehouse import create_warehouse
+
+		source_warehouse = create_warehouse("_Test Partial Transfer Source")
+		wip_warehouse = create_warehouse("_Test Partial Transfer WIP", company="_Test Company")
+		fg_warehouse = create_warehouse("_Test Partial Transfer FG", company="_Test Company")
+		fg_item = make_item(properties={"is_stock_item": 1}).name
+		rm_item = make_item(properties={"is_stock_item": 1}).name
+		bom = make_bom(item=fg_item, rate=100, raw_materials=[rm_item])
+		make_stock_entry(item=rm_item, to_warehouse=source_warehouse, qty=100)
+
+		wo = make_work_order(item=fg_item, qty=10, bom_no=bom.name, company="_Test Company")
+		wo.required_items[0].source_warehouse = source_warehouse
+		wo.wip_warehouse = wip_warehouse
+		wo.fg_warehouse = fg_warehouse
+		wo.submit()
+
+		pick_list = pick_list_for_wo(wo.name, for_qty=wo.qty)
+		pick_list.save().submit()
+		self.assertEqual(pick_list.status, "Open")
+
+		se = frappe.get_doc(create_stock_entry(pick_list.as_dict()))
+		self.assertTrue(all(row.pick_list_item for row in se.items))
+		self.assertEqual(se.fg_completed_qty, 0)
+
+		se.fg_completed_qty = 4
+		se.get_items()
+		self.assertEqual(len(se.items), len(pick_list.locations))
+		self.assertTrue(all(row.pick_list_item for row in se.items))
+		se.fg_completed_qty = 0
+
+		for row in se.items:
+			row.qty = 4
+		se.save().submit()
+		self.assertEqual(se.fg_completed_qty, 0)
+
+		pick_list.reload()
+		self.assertEqual(pick_list.locations[0].transferred_qty, 4)
+		self.assertEqual(pick_list.status, "Partially Transferred")
+
+		next_se = frappe.get_doc(create_stock_entry(pick_list.as_dict()))
+		self.assertEqual(len(next_se.items), 1)
+		self.assertEqual(next_se.items[0].qty, 6)
 
 	def test_create_second_delivery_note_with_fully_delivered_location(self):
 		# When one pick list item is fully delivered by the first Delivery Note
@@ -1682,7 +1808,7 @@ class TestPickList(FrappeTestCase):
 		stock_entry.cancel()
 
 	def test_packed_item_in_pick_list(self):
-		warehouse_1 = "RJ Warehouse - _TC"
+		warehouse_1 = "_Test Warehouse - _TC"
 		warehouse_2 = "_Test Warehouse 2 - _TC"
 		item_1 = make_item(properties={"is_stock_item": 0}).name
 		item_2 = make_item().name
@@ -1713,7 +1839,7 @@ class TestPickList(FrappeTestCase):
 
 	def test_packed_item_multiple_times_in_so(self):
 		frappe.db.delete("Item Price")
-		warehouse_1 = "RJ Warehouse - _TC"
+		warehouse_1 = "_Test Warehouse - _TC"
 		warehouse_2 = "_Test Warehouse 2 - _TC"
 		warehouse = "_Test Warehouse - _TC"
 		item_1 = make_item(properties={"is_stock_item": 0}).name
