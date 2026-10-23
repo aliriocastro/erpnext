@@ -18,8 +18,6 @@ from frappe.utils import cint, cstr, flt, get_formatted_email, get_link_to_form,
 from frappe.utils.deprecations import deprecated
 from frappe.utils.user import get_users_with_role
 
-import labotech.labotech.api.client as labotech
-
 from erpnext.accounts.party import (
 	get_dashboard_info,
 	validate_party_accounts,
@@ -147,11 +145,6 @@ class Customer(TransactionBase):
 		"""If customer created from Lead, update customer id in quotations, opportunities"""
 		self.update_lead_status()
 
-		if not self.disabled and self.pricing_lists:
-			labotech.build_customer_combined_item_prices(self.name)
-		elif not self.disabled:
-			labotech.clear_customer_combined_item_prices(self.name)
-
 	def validate(self):
 		self.flags.is_new_doc = self.is_new()
 		self.flags.old_lead = self.lead_name
@@ -261,22 +254,6 @@ class Customer(TransactionBase):
 		self.update_customer_groups()
 
 		link_portal_users_to_contacts(self)
-
-		# LABOTECH: reconstruye los Item Price combinados del cliente al guardarlo.
-		#
-		# WHY: el precio efectivo de un cliente sale de combinar sus `pricing_lists`; ese
-		# combinado se materializa en Item Price y no se recalcula solo. Sin este hook, editar
-		# las listas de un cliente deja los precios viejos vigentes hasta el próximo rebuild
-		# manual, y la venta sale con el precio equivocado sin ningún aviso.
-		#
-		# `is_new_doc` se excluye porque after_insert ya hizo el build inicial (evita el doble
-		# trabajo). Si está deshabilitado no se toca nada: se conserva lo que haya para no
-		# alterar el histórico. Customización introducida en a6a82cb079.
-		if not self.flags.is_new_doc:
-			if not self.disabled and self.pricing_lists:
-				labotech.build_customer_combined_item_prices(self.name)
-			elif not self.disabled:
-				labotech.clear_customer_combined_item_prices(self.name)
 
 	def add_role_for_user(self):
 		for portal_user in self.portal_users:
