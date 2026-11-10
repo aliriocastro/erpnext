@@ -156,7 +156,7 @@ def get_asset_categories_for_grouped_by_category(filters):
 def get_assets_for_grouped_by_category(filters):
 	condition = ""
 	if filters.get("asset_category"):
-		condition = f" and a.asset_category = '{filters.get('asset_category')}'"
+		condition = " and a.asset_category = %(asset_category)s"
 	finance_book_filter = ""
 	if filters.get("finance_book"):
 		finance_book_filter += " and ifnull(gle.finance_book, '')=%(finance_book)s"
@@ -232,6 +232,7 @@ def get_assets_for_grouped_by_category(filters):
 			"from_date": filters.from_date,
 			"company": filters.company,
 			"finance_book": filters.get("finance_book", ""),
+			"asset_category": filters.get("asset_category"),
 		},
 		as_dict=1,
 	)
@@ -427,7 +428,7 @@ def get_asset_details_for_grouped_by_category(filters):
 def get_assets_for_grouped_by_asset(filters):
 	condition = ""
 	if filters.get("asset"):
-		condition = f" and a.name = '{filters.get('asset')}'"
+		condition = " and a.name = %(asset)s"
 	finance_book_filter = ""
 	if filters.get("finance_book"):
 		finance_book_filter += " and ifnull(gle.finance_book, '')=%(finance_book)s"
@@ -503,6 +504,7 @@ def get_assets_for_grouped_by_asset(filters):
 			"from_date": filters.from_date,
 			"company": filters.company,
 			"finance_book": filters.get("finance_book", ""),
+			"asset": filters.get("asset"),
 		},
 		as_dict=1,
 	)
