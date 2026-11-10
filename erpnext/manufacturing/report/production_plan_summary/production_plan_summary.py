@@ -151,7 +151,7 @@ def get_column(filters):
 		},
 		{
 			"label": _("Document Type"),
-			"fieldtype": "Data",
+			"fieldtype": "Select",
 			"fieldname": "document_type",
 			"width": 150,
 		},

@@ -41,6 +41,7 @@ from erpnext.buying.utils import check_on_hold_or_closed_status
 from erpnext.controllers.accounts_controller import merge_taxes, validate_account_head
 from erpnext.controllers.buying_controller import BuyingController, get_stock_qty
 from erpnext.controllers.mapper import get_qty_already_mapped
+from erpnext.projects.doctype.project.project import update_purchase_cost
 from erpnext.stock import get_warehouse_account_map
 from erpnext.stock.doctype.purchase_receipt.purchase_receipt import (
 	get_item_account_wise_additional_cost,
@@ -238,6 +239,7 @@ class PurchaseInvoice(BuyingController):
 				"source_field": "amount",
 				"percent_join_field": "purchase_order",
 				"overflow_type": "billing",
+				"billing_flag": "update_billed_amount_in_purchase_order",
 				"extra_cond": """ and exists(select name from `tabPurchase Invoice`
 				where name=`tabPurchase Invoice Item`.parent and (is_return=0 or update_billed_amount_in_purchase_order=1))""",
 			}
@@ -765,9 +767,10 @@ class PurchaseInvoice(BuyingController):
 					"target_parent_dt": "Purchase Order",
 					"target_parent_field": "per_received",
 					"target_ref_field": "qty",
-					"source_field": "received_qty",
+					"source_field": "received_qty * conversion_factor",
+					"target_conversion_factor": "conversion_factor",
 					"second_source_dt": "Purchase Receipt Item",
-					"second_source_field": "received_qty",
+					"second_source_field": "received_qty * conversion_factor",
 					"second_join_field": "purchase_order_item",
 					"percent_join_field": "purchase_order",
 					"overflow_type": "receipt",
@@ -801,13 +804,16 @@ class PurchaseInvoice(BuyingController):
 						"target_dt": "Purchase Order Item",
 						"join_field": "po_detail",
 						"target_field": "returned_qty",
-						"source_field": "-1 * qty",
+						"source_field": "-1 * qty * conversion_factor",
+						"target_conversion_factor": "conversion_factor",
 						"second_source_dt": "Purchase Receipt Item",
-						"second_source_field": "-1 * qty",
+						"second_source_field": "-1 * qty * conversion_factor",
 						"second_join_field": "purchase_order_item",
 						"overflow_type": "receipt",
 						"extra_cond": """ and exists (select name from `tabPurchase Invoice`
 						where name=`tabPurchase Invoice Item`.parent and update_stock=1 and is_return=1)""",
+						"second_source_extra_cond": """ and exists (select name from `tabPurchase Receipt`
+						where name=`tabPurchase Receipt Item`.parent and is_return=1)""",
 					}
 				)
 
@@ -878,6 +884,9 @@ class PurchaseInvoice(BuyingController):
 		self.update_advance_tax_references()
 
 		self.process_common_party_accounting()
+
+		if self.is_return and self.return_against:
+			frappe.get_doc(self.doctype, self.return_against).set_status(update=True)
 
 	def on_update_after_submit(self):
 		fields_to_check = [
@@ -1073,7 +1082,10 @@ class PurchaseInvoice(BuyingController):
 		)
 
 		for item in self.get("items"):
-			if flt(item.base_net_amount) or (self.get("update_stock") and item.valuation_rate):
+			if flt(item.base_net_amount) or (
+				self.get("update_stock")
+				and (item.valuation_rate or voucher_wise_stock_value.get((item.name, item.warehouse)))
+			):
 				if item.item_code:
 					frappe.get_cached_value("Item", item.item_code, "asset_category")
 
@@ -1411,10 +1423,9 @@ class PurchaseInvoice(BuyingController):
 
 	def make_stock_adjustment_entry(self, gl_entries, item, voucher_wise_stock_value, account_currency):
 		net_amt_precision = item.precision("base_net_amount")
-		val_rate_db_precision = 6 if cint(item.precision("valuation_rate")) <= 6 else 9
 
 		warehouse_debit_amount = flt(
-			flt(item.valuation_rate, val_rate_db_precision) * get_stock_qty(item, item.qty),
+			flt(item.valuation_rate) * get_stock_qty(item, item.qty),
 			net_amt_precision,
 		)
 
@@ -1837,24 +1848,11 @@ class PurchaseInvoice(BuyingController):
 		)
 		self.update_advance_tax_references(cancel=1)
 
-	def update_project(self):
-		projects = frappe._dict()
-		for d in self.items:
-			if d.project:
-				if self.docstatus == 1:
-					projects[d.project] = projects.get(d.project, 0) + d.base_net_amount
-				elif self.docstatus == 2:
-					projects[d.project] = projects.get(d.project, 0) - d.base_net_amount
+		if self.is_return and self.return_against:
+			frappe.get_doc(self.doctype, self.return_against).set_status(update=True)
 
-		pj = frappe.qb.DocType("Project")
-		for proj, value in projects.items():
-			res = frappe.qb.from_(pj).select(pj.total_purchase_cost).where(pj.name == proj).for_update().run()
-			current_purchase_cost = res and res[0][0] or 0
-			# frappe.db.set_value("Project", proj, "total_purchase_cost", current_purchase_cost + value)
-			project_doc = frappe.get_doc("Project", proj)
-			project_doc.total_purchase_cost = current_purchase_cost + value
-			project_doc.calculate_gross_margin()
-			project_doc.db_update()
+	def update_project(self):
+		update_purchase_cost({d.project for d in self.items if d.project})
 
 	def validate_supplier_invoice(self):
 		if self.bill_no:

@@ -103,7 +103,12 @@ def get_columns(filters):
 		},
 		{"label": _("Posting Date"), "fieldname": "posting_date", "fieldtype": "Date"},
 		{"label": _("Posting Time"), "fieldname": "posting_time", "fieldtype": "Time"},
-		{"label": _("Voucher Type"), "fieldname": "voucher_type", "width": "110"},
+		{
+			"label": _("Voucher Type"),
+			"fieldname": "voucher_type",
+			"fieldtype": "Select",
+			"width": "110",
+		},
 		{
 			"label": _("Voucher No"),
 			"fieldname": "voucher_no",

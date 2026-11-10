@@ -142,11 +142,16 @@ def get_columns(filters):
 		{
 			"label": _("Ledger Type"),
 			"fieldname": "ledger_type",
-			"fieldtype": "Data",
+			"fieldtype": "Select",
 		},
 		{"label": _("Posting Date"), "fieldname": "posting_date", "fieldtype": "Date"},
 		{"label": _("Posting Time"), "fieldname": "posting_time", "fieldtype": "Time"},
-		{"label": _("Voucher Type"), "fieldname": "voucher_type", "width": "110"},
+		{
+			"label": _("Voucher Type"),
+			"fieldname": "voucher_type",
+			"fieldtype": "Select",
+			"width": "110",
+		},
 		{
 			"label": _("Voucher No"),
 			"fieldname": "voucher_no",
@@ -170,7 +175,7 @@ def get_columns(filters):
 	]
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def create_reposting_entries(rows: str | list, company: str):
 	if isinstance(rows, str):
 		rows = parse_json(rows)

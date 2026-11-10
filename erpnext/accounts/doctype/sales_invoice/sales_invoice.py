@@ -11,10 +11,12 @@ from frappe.utils import add_days, cint, cstr, flt, formatdate, get_link_to_form
 
 import erpnext
 from erpnext.accounts.deferred_revenue import validate_service_stop_date
+from erpnext.accounts.doctype.dunning.dunning import get_payment_schedule_outstanding
 from erpnext.accounts.doctype.loyalty_program.loyalty_program import (
 	get_loyalty_program_details_with_points,
 	validate_loyalty_points,
 )
+from erpnext.accounts.doctype.mode_of_payment.mode_of_payment import validate_enabled_mode_of_payment
 from erpnext.accounts.doctype.repost_accounting_ledger.repost_accounting_ledger import (
 	validate_docs_for_deferred_accounting,
 	validate_docs_for_voucher_types,
@@ -36,6 +38,7 @@ from erpnext.accounts.utils import (
 )
 from erpnext.assets.doctype.asset.depreciation import (
 	depreciate_asset,
+	get_asset_disposal_values,
 	get_disposal_account_and_cost_center,
 	get_gl_entries_on_asset_disposal,
 	get_gl_entries_on_asset_regain,
@@ -251,6 +254,7 @@ class SalesInvoice(SellingController):
 				"status_field": "billing_status",
 				"keyword": "Billed",
 				"overflow_type": "billing",
+				"billing_flag": "update_billed_amount_in_sales_order",
 				"extra_cond": """ and exists(select name from `tabSales Invoice`
 				where name=`tabSales Invoice Item`.parent and (is_return=0 or update_billed_amount_in_sales_order=1))""",
 			}
@@ -500,12 +504,14 @@ class SalesInvoice(SellingController):
 			self.validate_produced_serial_nos_against_reservation()
 
 		self.process_asset_depreciation()
+		self.set_asset_disposal_values()
 
 		# this sequence because outstanding may get -ve
 		self.make_gl_entries()
 
 		if self.update_stock == 1:
 			self.repost_future_sle_and_gle()
+			self.update_project_consumed_material_cost()
 
 		if not self.is_return:
 			self.update_billing_status_for_zero_amount_refdoc("Delivery Note")
@@ -533,6 +539,9 @@ class SalesInvoice(SellingController):
 			self.apply_loyalty_points()
 
 		self.process_common_party_accounting()
+
+		if self.is_return and self.return_against:
+			frappe.get_doc(self.doctype, self.return_against).set_status(update=True)
 
 	def validate_pos_return(self):
 		if self.is_consolidated:
@@ -604,6 +613,7 @@ class SalesInvoice(SellingController):
 		if self.update_stock == 1:
 			self.update_stock_reservation_entries()
 			self.repost_future_sle_and_gle()
+			self.update_project_consumed_material_cost()
 
 		self.db_set("status", "Cancelled")
 
@@ -636,6 +646,9 @@ class SalesInvoice(SellingController):
 
 		self.delete_auto_created_batches()
 
+		if self.is_return and self.return_against:
+			frappe.get_doc(self.doctype, self.return_against).set_status(update=True)
+
 	def update_status_updater_args(self):
 		if cint(self.update_stock):
 			self.status_updater.append(
@@ -646,13 +659,14 @@ class SalesInvoice(SellingController):
 					"target_parent_field": "per_delivered",
 					"target_field": "delivered_qty",
 					"target_ref_field": "qty",
-					"source_field": "qty",
+					"source_field": "qty * conversion_factor",
+					"target_conversion_factor": "conversion_factor",
 					"join_field": "so_detail",
 					"percent_join_field": "sales_order",
 					"status_field": "delivery_status",
 					"keyword": "Delivered",
 					"second_source_dt": "Delivery Note Item",
-					"second_source_field": "qty",
+					"second_source_field": "qty * conversion_factor",
 					"second_join_field": "so_detail",
 					"overflow_type": "delivery",
 					"extra_cond": """ and exists(select name from `tabSales Invoice`
@@ -667,9 +681,10 @@ class SalesInvoice(SellingController):
 						"join_field": "so_detail",
 						"target_field": "returned_qty",
 						"target_parent_dt": "Sales Order",
-						"source_field": "-1 * qty",
+						"source_field": "-1 * qty * conversion_factor",
+						"target_conversion_factor": "conversion_factor",
 						"second_source_dt": "Delivery Note Item",
-						"second_source_field": "-1 * qty",
+						"second_source_field": "-1 * qty * conversion_factor",
 						"second_join_field": "so_detail",
 						"extra_cond": """ and exists (select name from `tabSales Invoice` where name=`tabSales Invoice Item`.parent and update_stock=1 and is_return=1)""",
 						"second_source_extra_cond": """ and exists (select name from `tabDelivery Note` where name=`tabDelivery Note Item`.parent and is_return=1)""",
@@ -1089,6 +1104,11 @@ class SalesInvoice(SellingController):
 				throw(_("Customer {0} does not belong to project {1}").format(self.customer, self.project))
 
 	def validate_pos(self):
+		# Consolidation posts payments already accepted on submitted POS invoices.
+		if not self.get("is_consolidated"):
+			for payment in self.get("payments") or []:
+				validate_enabled_mode_of_payment(payment.mode_of_payment)
+
 		if self.is_return:
 			invoice_total = self.rounded_total or self.grand_total
 			if abs(flt(self.paid_amount)) + abs(flt(self.write_off_amount)) - abs(
@@ -1343,6 +1363,22 @@ class SalesInvoice(SellingController):
 			self.restore_asset()
 
 		self.update_asset()
+
+	def set_asset_disposal_values(self) -> None:
+		"""Store the asset values the sale or return entries are built from, so a repost reproduces them."""
+		if self.is_internal_transfer():
+			return
+
+		for item in self.get("items"):
+			if item.is_fixed_asset and item.asset:
+				asset = frappe.get_doc("Asset", item.asset)
+				values = get_asset_disposal_values(asset, item.finance_book)
+				item.db_set(
+					{
+						"asset_value_after_depreciation": values["value_after_depreciation"],
+						"asset_gross_value": values["gross_asset_value"],
+					}
+				)
 
 	def depreciate_asset_on_sale(self):
 		"""
@@ -1694,6 +1730,7 @@ class SalesInvoice(SellingController):
 
 	def get_gl_entries_for_fixed_asset(self, item, gl_entries):
 		asset = frappe.get_cached_doc("Asset", item.asset)
+		disposal_values = get_stored_asset_disposal_values(item)
 
 		if self.is_return:
 			fixed_asset_gl_entries = get_gl_entries_on_asset_regain(
@@ -1703,6 +1740,7 @@ class SalesInvoice(SellingController):
 				self.get("doctype"),
 				self.get("name"),
 				self.get("posting_date"),
+				disposal_values,
 			)
 		else:
 			fixed_asset_gl_entries = get_gl_entries_on_asset_disposal(
@@ -1712,6 +1750,7 @@ class SalesInvoice(SellingController):
 				self.get("doctype"),
 				self.get("name"),
 				self.get("posting_date"),
+				disposal_values,
 			)
 
 		for gle in fixed_asset_gl_entries:
@@ -2132,9 +2171,7 @@ class SalesInvoice(SellingController):
 
 		points_to_redeem = self.loyalty_points
 		for lp_entry in loyalty_point_entries:
-			if lp_entry.invoice_type != self.doctype or lp_entry.invoice == self.name:
-				# redeemption should be done against same doctype
-				# also it shouldn't be against itself
+			if lp_entry.invoice == self.name:
 				continue
 			available_points = lp_entry.loyalty_points - flt(redemption_details.get(lp_entry.name))
 			if available_points > points_to_redeem:
@@ -3065,19 +3102,38 @@ def create_dunning(source_name, target_doc=None, ignore_permissions=False):
 			dunning_type = frappe.get_doc("Dunning Type", dunning_type)
 			target.dunning_type = dunning_type.name
 			target.rate_of_interest = dunning_type.rate_of_interest
-			target.dunning_fee = dunning_type.dunning_fee
+			target.dunning_fee = flt(dunning_type.dunning_fee) / target.conversion_rate
 			target.income_account = dunning_type.income_account
 			target.cost_center = dunning_type.cost_center
 			target.language = source.language
-			target.get_dunning_letter_text()
 
 		# update outstanding from doc
 		if source.payment_schedule and len(source.payment_schedule) == 1:
 			for row in target.overdue_payments:
 				if row.payment_schedule == source.payment_schedule[0].name:
-					row.outstanding = source.get("outstanding_amount")
+					# outstanding_amount is in the party account currency, but the Overdue Payment
+					# row is in the invoice's transaction currency. When they differ, use the
+					# payment schedule's own outstanding — it is kept in transaction currency and
+					# updated as payments are allocated, so it stays correct even when the invoice
+					# and its payments post at different exchange rates (#56006).
+					if source.party_account_currency and source.party_account_currency != source.currency:
+						row.outstanding = source.payment_schedule[0].outstanding
+					else:
+						row.outstanding = source.get("outstanding_amount")
 
+		if len(source.payment_schedule) > 1 and source.party_account_currency == source.currency:
+			outstanding = get_payment_schedule_outstanding(source, source.payment_schedule)
+			for row in target.overdue_payments[:]:
+				if row.sales_invoice == source.name:
+					row.outstanding = outstanding[row.payment_schedule]
+					if flt(row.outstanding, row.precision("outstanding")) <= 0:
+						target.remove(row)
+
+		if not target.overdue_payments:
+			frappe.throw(_("There are no overdue payments to include in this Dunning."))
 		target.validate()
+		if dunning_type:
+			target.get_dunning_letter_text()
 
 	return get_mapped_doc(
 		from_doctype="Sales Invoice",
@@ -3141,3 +3197,14 @@ def check_if_return_invoice_linked_with_payment_entry(self):
 			message += " " + ", ".join(payment_entries_link) + " "
 			message += _("to unallocate the amount of this Return Invoice before cancelling it.")
 			frappe.throw(message)
+
+
+def get_stored_asset_disposal_values(item) -> dict | None:
+	"""Asset values stored on the row at submit, so a repost does not pick up later changes to the asset."""
+	if not flt(item.asset_gross_value):
+		return None
+
+	return {
+		"value_after_depreciation": item.asset_value_after_depreciation,
+		"gross_asset_value": item.asset_gross_value,
+	}

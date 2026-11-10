@@ -73,7 +73,7 @@ def get_columns(filters):
 		{
 			"fieldname": "payment_document",
 			"label": _("Payment Document Type"),
-			"fieldtype": "Data",
+			"fieldtype": "Select",
 			"width": 100,
 		},
 		{
@@ -83,7 +83,12 @@ def get_columns(filters):
 			"options": "payment_document",
 			"width": 160,
 		},
-		{"fieldname": "party_type", "label": _("Party Type"), "fieldtype": "Data", "width": 100},
+		{
+			"fieldname": "party_type",
+			"label": _("Party Type"),
+			"fieldtype": "Select",
+			"width": 100,
+		},
 		{
 			"fieldname": "party",
 			"label": _("Party"),

@@ -97,7 +97,12 @@ def get_columns(filters):
 				"fieldtype": "Data",
 				"width": 110,
 			},
-			{"label": _("Document Type"), "fieldname": "reference_type", "fieldtype": "Data", "width": 90},
+			{
+				"label": _("Document Type"),
+				"fieldname": "reference_type",
+				"fieldtype": "Select",
+				"width": 90,
+			},
 			{
 				"label": _("Document Name"),
 				"fieldname": "reference_name",

@@ -26,7 +26,7 @@ def get_columns(filters):
 		{"label": _("Posting Time"), "fieldtype": "Time", "fieldname": "posting_time", "width": 90},
 		{
 			"label": _("Voucher Type"),
-			"fieldtype": "Data",
+			"fieldtype": "Select",
 			"fieldname": "voucher_type",
 			"width": 160,
 		},
@@ -78,7 +78,7 @@ def get_columns(filters):
 		},
 		{
 			"label": _("Party Type"),
-			"fieldtype": "Data",
+			"fieldtype": "Select",
 			"fieldname": "party_type",
 			"width": 90,
 		},

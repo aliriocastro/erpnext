@@ -521,7 +521,10 @@ def get_available_qty_to_reserve(
 
 	if batch_no:
 		return get_batch_qty(
-			item_code=item_code, warehouse=warehouse, batch_no=batch_no, ignore_voucher_nos=[ignore_sre]
+			item_code=item_code,
+			warehouse=warehouse,
+			batch_no=batch_no,
+			ignore_voucher_nos=[ignore_sre] if ignore_sre else None,
 		)
 
 	available_qty = _get_stock_balance(item_code, warehouse)
@@ -589,6 +592,7 @@ def get_available_serial_nos_to_reserve(
 				& (sre.warehouse == warehouse)
 				& (sre.reserved_qty >= sre.delivered_qty)
 				& (sre.status.notin(["Delivered", "Cancelled"]))
+				& (sb_entry.delivered_qty < sb_entry.qty)
 				& (sre.reservation_based_on == "Serial and Batch")
 			)
 		)

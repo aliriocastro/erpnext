@@ -23,6 +23,7 @@ from erpnext.controllers.sales_and_purchase_return import (
 	filter_serial_batches,
 	make_serial_batch_bundle_for_return,
 )
+from erpnext.projects.doctype.project.project import update_consumed_material_cost
 from erpnext.stock import get_warehouse_account_map
 from erpnext.stock.doctype.inventory_dimension.inventory_dimension import (
 	get_evaluated_inventory_dimension,
@@ -282,6 +283,9 @@ class StockController(AccountsController):
 		if table_name == "packed_items":
 			parent_details = self.get_parent_details_for_packed_items()
 
+		auto_pick_outward = self.auto_picks_outward_serial_batch()
+		picked_serial_nos = self.get_serial_nos_used_in_rows() if auto_pick_outward else None
+
 		for row in self.get(table_name):
 			item_code = row.get("rm_item_code") or row.get("item_code")
 			if not item_code or not self.is_serial_batch_item(item_code):
@@ -295,7 +299,8 @@ class StockController(AccountsController):
 				self.validate_serial_nos_and_batches_with_bundle(row)
 
 			if not row.serial_no and not row.batch_no and not row.get("rejected_serial_no"):
-				continue
+				if not (auto_pick_outward and row.get("use_serial_batch_fields") and flt(row.get("qty")) > 0):
+					continue
 
 			if not row.use_serial_batch_fields and (
 				row.serial_no or row.batch_no or row.get("rejected_serial_no")
@@ -328,11 +333,52 @@ class StockController(AccountsController):
 
 				if row.get("qty") or row.get("consumed_qty") or row.get("stock_qty"):
 					self.update_bundle_details(bundle_details, table_name, row, parent_details=parent_details)
-					self.create_serial_batch_bundle(bundle_details, row)
+					self.create_auto_picked_bundle(bundle_details, row, picked_serial_nos)
 
 				if row.get("rejected_qty"):
 					self.update_bundle_details(bundle_details, table_name, row, is_rejected=True)
 					self.create_serial_batch_bundle(bundle_details, row)
+
+	def get_serial_nos_used_in_rows(self):
+		from erpnext.stock.doctype.serial_no.serial_no import get_serial_nos
+
+		picked_serial_nos = defaultdict(list)
+		bundle_items = {}
+		for table_name in ("items", "packed_items"):
+			for row in self.get(table_name) or []:
+				item_code = row.get("rm_item_code") or row.item_code
+				if row.get("serial_no"):
+					picked_serial_nos[item_code].extend(get_serial_nos(row.serial_no))
+				elif row.get("serial_and_batch_bundle"):
+					bundle_items[row.serial_and_batch_bundle] = item_code
+
+		if bundle_items:
+			for entry in frappe.get_all(
+				"Serial and Batch Entry",
+				filters={"parent": ("in", list(bundle_items)), "serial_no": ("is", "set")},
+				fields=["parent", "serial_no"],
+			):
+				picked_serial_nos[bundle_items[entry.parent]].append(entry.serial_no)
+
+		return picked_serial_nos
+
+	def create_auto_picked_bundle(self, bundle_details, row, picked_serial_nos):
+		if picked_serial_nos is None or row.serial_no:
+			self.create_serial_batch_bundle(bundle_details, row)
+			return
+
+		item_code = bundle_details["item_code"]
+		bundle_details["ignore_serial_nos"] = list(picked_serial_nos[item_code])
+		sn_doc = self.create_serial_batch_bundle(bundle_details, row)
+		picked_serial_nos[item_code].extend(d.serial_no for d in sn_doc.get("entries") or [] if d.serial_no)
+
+	def auto_picks_outward_serial_batch(self):
+		if self.doctype not in ("Delivery Note", "Sales Invoice", "POS Invoice") or self.get("is_return"):
+			return False
+
+		return bool(
+			frappe.db.get_single_value("Stock Settings", "auto_create_serial_and_batch_bundle_for_outward")
+		)
 
 	def get_parent_details_for_packed_items(self):
 		parent_details = frappe._dict()
@@ -482,10 +528,29 @@ class StockController(AccountsController):
 			if table_name == "packed_items" and row.get("parent_detail_docname"):
 				parent_rows = self.get("items", {"name": row.parent_detail_docname}) or []
 				for d in parent_rows:
-					if d.get(field) and not d.get(bundle_field):
+					if (
+						d.get(field)
+						and not d.get(bundle_field)
+						and not self.is_legacy_packed_item(row, d.get(field))
+					):
 						reference_ids.append(d.get(field))
 
 		return field, reference_ids
+
+	def is_legacy_packed_item(self, row, source_parent_detail_docname):
+		"""Packed items delivered before v15 have serial / batch fields, but no bundle to return
+		against. make_bundle_using_old_serial_batch_fields handles them."""
+		if not (row.serial_no or row.batch_no):
+			return False
+
+		return not frappe.db.exists(
+			"Packed Item",
+			{
+				"parent_detail_docname": source_parent_detail_docname,
+				"item_code": row.item_code,
+				"serial_and_batch_bundle": ("is", "set"),
+			},
+		)
 
 	@frappe.request_cache
 	def is_serial_batch_item(self, item_code) -> bool:
@@ -572,6 +637,8 @@ class StockController(AccountsController):
 
 		row.set(field, sn_doc.name)
 		row.db_set({field: sn_doc.name})
+
+		return sn_doc
 
 	def validate_serial_nos_and_batches_with_bundle(self, row):
 		from erpnext.stock.doctype.serial_no.serial_no import get_serial_nos
@@ -1164,6 +1231,7 @@ class StockController(AccountsController):
 					"Purchase Invoice",
 					"Sales Invoice",
 					"Delivery Note",
+					"Subcontracting Receipt",
 				] and frappe.get_single_value(
 					"Stock Settings", "allow_to_make_quality_inspection_after_purchase_or_delivery"
 				):
@@ -1215,9 +1283,10 @@ class StockController(AccountsController):
 			else:
 				frappe.msgprint(msg, alert=True, indicator="orange")
 
-	def update_blanket_order(self):
-		blanket_orders = list(set([d.blanket_order for d in self.items if d.blanket_order]))
-		for blanket_order in blanket_orders:
+	def update_blanket_order(self, extra_blanket_orders=()):
+		"""Refresh ordered qty of the blanket orders on the items and of `extra_blanket_orders`."""
+		blanket_orders = {d.blanket_order for d in self.items if d.blanket_order}
+		for blanket_order in blanket_orders.union(extra_blanket_orders):
 			frappe.get_doc("Blanket Order", blanket_order).update_ordered_qty()
 
 	def validate_customer_provided_item(self):
@@ -1473,6 +1542,11 @@ class StockController(AccountsController):
 		)
 
 		if self.docstatus == 2:
+			# nothing to repost when the cancelled voucher never touched the stock ledger
+			if not frappe.db.exists(
+				"Stock Ledger Entry", {"voucher_type": self.doctype, "voucher_no": self.name}
+			):
+				return
 			force = True
 
 		if force or future_sle_exists(args, for_update=True) or repost_required_for_queue(self):
@@ -1487,6 +1561,10 @@ class StockController(AccountsController):
 				)
 			else:
 				create_repost_item_valuation_entry(args)
+
+	def update_project_consumed_material_cost(self):
+		projects = {self.get("project"), *(d.get("project") for d in self.get("items"))}
+		update_consumed_material_cost(projects - {None, ""})
 
 	def add_gl_entry(
 		self,
@@ -1537,6 +1615,7 @@ def show_accounting_ledger_preview(company: str, doctype: str, docname: str):
 	filters = frappe._dict(company=company, include_dimensions=1)
 	doc = frappe.get_doc(doctype, docname)
 	doc.check_permission("read")
+	frappe.has_permission("GL Entry", "read", throw=True)
 	doc.run_method("before_gl_preview")
 
 	gl_columns, gl_data = get_accounting_ledger_preview(doc, filters)
@@ -1551,6 +1630,7 @@ def show_stock_ledger_preview(company: str, doctype: str, docname: str):
 	filters = frappe._dict(company=company, valuation_field_type="Currency")
 	doc = frappe.get_doc(doctype, docname)
 	doc.check_permission("read")
+	frappe.has_permission("Stock Ledger Entry", "read", throw=True)
 	doc.run_method("before_sl_preview")
 
 	sl_columns, sl_data = get_stock_ledger_preview(doc, filters)
@@ -1759,8 +1839,8 @@ def check_item_quality_inspection(doctype: str, docstatus: str | int, items: str
 	return [item for item in items if item.get("item_code") in inspection_required_items]
 
 
-@frappe.whitelist()
-def make_quality_inspections(company, doctype, docname, items):
+@frappe.whitelist(methods=["POST"])
+def make_quality_inspections(company: str, doctype: str, docname: str, items: str | list):
 	if isinstance(items, str):
 		items = json.loads(items)
 

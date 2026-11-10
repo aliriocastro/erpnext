@@ -21,6 +21,7 @@ from erpnext.buying.doctype.purchase_order.test_purchase_order import (
 from erpnext.buying.doctype.supplier.test_supplier import create_supplier
 from erpnext.controllers.accounts_controller import InvalidQtyError, get_payment_terms
 from erpnext.controllers.buying_controller import QtyMismatchError
+from erpnext.controllers.sales_and_purchase_return import make_return_doc
 from erpnext.exceptions import InvalidCurrency
 from erpnext.projects.doctype.project.test_project import make_project
 from erpnext.stock.doctype.item.test_item import create_item
@@ -937,41 +938,29 @@ class TestPurchaseInvoice(FrappeTestCase, StockTestMixin):
 		)
 
 	def test_total_purchase_cost_for_project(self):
-		if not frappe.db.exists("Project", {"project_name": "_Test Project for Purchase"}):
-			project = make_project({"project_name": "_Test Project for Purchase"})
-		else:
-			project = frappe.get_doc("Project", {"project_name": "_Test Project for Purchase"})
-
-		existing_purchase_cost = frappe.db.sql(
-			f"""select sum(base_net_amount)
-			from `tabPurchase Invoice Item`
-			where project = '{project.name}'
-			and docstatus=1"""
-		)
-		existing_purchase_cost = existing_purchase_cost and existing_purchase_cost[0][0] or 0
-
-		pi = make_purchase_invoice(currency="USD", conversion_rate=60, project=project.name)
-		self.assertEqual(
-			frappe.db.get_value("Project", project.name, "total_purchase_cost"),
-			existing_purchase_cost + 15000,
+		project = make_project(
+			{"project_name": f"_Test Project for Purchase {frappe.generate_hash(length=6)}"}
 		)
 
-		pi1 = make_purchase_invoice(qty=10, project=project.name)
-		self.assertEqual(
-			frappe.db.get_value("Project", project.name, "total_purchase_cost"),
-			existing_purchase_cost + 15500,
+		pi = make_purchase_invoice(
+			item_code="_Test Non Stock Item",
+			supplier="_Test Supplier USD",
+			currency="USD",
+			conversion_rate=60,
+			project=project.name,
 		)
+		self.assertEqual(frappe.db.get_value("Project", project.name, "total_purchase_cost"), 15000)
 
+		pi1 = make_purchase_invoice(item_code="_Test Non Stock Item", qty=10, project=project.name)
+		self.assertEqual(frappe.db.get_value("Project", project.name, "total_purchase_cost"), 15500)
+
+		pi1.reload()
 		pi1.cancel()
-		self.assertEqual(
-			frappe.db.get_value("Project", project.name, "total_purchase_cost"),
-			existing_purchase_cost + 15000,
-		)
+		self.assertEqual(frappe.db.get_value("Project", project.name, "total_purchase_cost"), 15000)
 
+		pi.reload()
 		pi.cancel()
-		self.assertEqual(
-			frappe.db.get_value("Project", project.name, "total_purchase_cost"), existing_purchase_cost
-		)
+		self.assertEqual(frappe.db.get_value("Project", project.name, "total_purchase_cost"), 0)
 
 	def test_return_purchase_invoice_with_perpetual_inventory(self):
 		pi = make_purchase_invoice(
@@ -1419,6 +1408,32 @@ class TestPurchaseInvoice(FrappeTestCase, StockTestMixin):
 		pi.append("payment_schedule", dict(due_date="2017-01-01", invoice_portion=50.00, payment_amount=50))
 
 		self.assertRaises(frappe.ValidationError, pi.insert)
+
+	def test_standalone_return_updates_paid_invoice_status(self):
+		invoice = make_purchase_invoice(qty=2, rate=100)
+		payment = get_payment_entry(invoice.doctype, invoice.name, bank_account="_Test Bank - _TC")
+		payment.reference_no = "Return status test"
+		payment.reference_date = nowdate()
+		payment.insert()
+		payment.submit()
+		invoice.reload()
+		self.assertEqual(invoice.status, "Paid")
+		self.assertEqual(invoice.outstanding_amount, 0)
+
+		return_invoice = make_return_doc(invoice.doctype, invoice.name)
+		return_invoice.update_outstanding_for_self = 1
+		return_invoice.insert()
+		return_invoice.submit()
+
+		invoice.reload()
+		self.assertEqual(invoice.status, "Debit Note Issued")
+		self.assertEqual(invoice.outstanding_amount, 0)
+		self.assertEqual(return_invoice.outstanding_amount, -invoice.grand_total)
+
+		return_invoice.cancel()
+		invoice.reload()
+		self.assertEqual(invoice.status, "Paid")
+		self.assertEqual(invoice.outstanding_amount, 0)
 
 	def test_debit_note(self):
 		from erpnext.accounts.doctype.payment_entry.test_payment_entry import get_payment_entry
@@ -2423,6 +2438,25 @@ class TestPurchaseInvoice(FrappeTestCase, StockTestMixin):
 
 		frappe.db.set_single_value("Buying Settings", "maintain_same_rate", 1)
 
+	@change_settings(
+		"Buying Settings", {"maintain_same_rate": 0, "set_landed_cost_based_on_purchase_invoice_rate": 1}
+	)
+	def test_adjust_incoming_rate_keeps_discounted_pr_value(self):
+		pr = make_purchase_receipt(qty=10, rate=100, do_not_submit=True)
+		pr.apply_discount_on = "Net Total"
+		pr.additional_discount_percentage = 10
+		pr.submit()
+
+		pi = create_purchase_invoice_from_receipt(pr.name)
+		pi.submit()
+		pr.reload()
+
+		stock_value_difference = frappe.db.get_value(
+			"Stock Ledger Entry", {"voucher_no": pr.name, "is_cancelled": 0}, "stock_value_difference"
+		)
+		self.assertEqual(pr.items[0].amount_difference_with_purchase_invoice, 0)
+		self.assertEqual(stock_value_difference, 900)
+
 	def test_item_less_defaults(self):
 		pi = frappe.new_doc("Purchase Invoice")
 		pi.supplier = "_Test Supplier"
@@ -2858,7 +2892,9 @@ class TestPurchaseInvoice(FrappeTestCase, StockTestMixin):
 			pi.submit()
 			invoices.append(pi)
 
-		make_return_doc("Purchase Invoice", invoices[0].name).submit()
+		debit_note = make_return_doc("Purchase Invoice", invoices[0].name)
+		debit_note.update_billed_amount_in_purchase_order = 1
+		debit_note.submit()
 
 		po.reload()
 		po.update_status("Closed")

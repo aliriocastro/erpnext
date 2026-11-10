@@ -311,7 +311,8 @@ class TestMaterialRequest(FrappeTestCase):
 		mr.update_status("Stopped")
 		self.assertRaises(frappe.InvalidStatusError, po.submit)
 		po.db_set("docstatus", 1)
-		self.assertRaises(frappe.InvalidStatusError, po.cancel)
+		po.cancel()
+		self.assertEqual(po.docstatus, 2)
 
 		# resubmit and check for per complete
 		mr.load_from_db()
@@ -1095,6 +1096,23 @@ class TestMaterialRequest(FrappeTestCase):
 		self.assertEqual(material_request.per_ordered, 100)
 		self.assertEqual(material_request.status, "Transferred")
 		self.assertEqual(material_request.transfer_status, "Completed")
+
+	def test_purchase_request_ignores_customer_item_restrictions(self):
+		from erpnext.selling.doctype.party_specific_item.test_party_specific_item import (
+			create_party_specific_item,
+		)
+
+		create_party_specific_item(
+			party_type="Customer",
+			party="_Test Customer",
+			restrict_based_on="Item",
+			based_on_value="_Test FG Item",
+		)
+		mr = make_material_request(do_not_submit=True)
+		mr.customer = "_Test Customer"
+		mr.save()
+
+		self.assertIsNone(mr.customer)
 
 
 def get_in_transit_warehouse(company):

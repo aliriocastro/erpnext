@@ -14,7 +14,12 @@ def execute(filters=None):
 
 def get_columns():
 	return [
-		{"label": _("Voucher Type"), "fieldname": "voucher_type", "width": 300},
+		{
+			"label": _("Voucher Type"),
+			"fieldname": "voucher_type",
+			"fieldtype": "Select",
+			"width": 300,
+		},
 		{
 			"label": _("Voucher No"),
 			"fieldname": "voucher_no",

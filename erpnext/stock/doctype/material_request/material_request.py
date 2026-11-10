@@ -20,6 +20,7 @@ from erpnext.controllers.buying_controller import BuyingController
 from erpnext.controllers.mapper import get_qty_already_mapped
 from erpnext.manufacturing.doctype.work_order.work_order import get_item_details
 from erpnext.stock.doctype.item.item import get_item_defaults
+from erpnext.stock.doctype.price_list.price_list import is_price_list_enabled
 from erpnext.stock.get_item_details import get_price_list_rate_for
 from erpnext.stock.stock_balance import get_indented_qty, update_bin_qty
 
@@ -149,13 +150,14 @@ class MaterialRequest(BuyingController):
 					)
 
 	def validate(self):
+		self.clear_source_warehouse()
+		self.validate_material_request_type()
 		super().validate()
 
 		self.validate_schedule_date()
 		self.check_for_on_hold_or_closed_status("Sales Order", "sales_order")
 		self.validate_with_previous_doc()
 		self.validate_uom_is_integer("uom", "qty")
-		self.validate_material_request_type()
 
 		if not self.status:
 			self.status = "Draft"
@@ -188,13 +190,20 @@ class MaterialRequest(BuyingController):
 		self.reset_default_field_value("set_warehouse", "items", "warehouse")
 		self.reset_default_field_value("set_from_warehouse", "items", "from_warehouse")
 
-		if self.buying_price_list and not frappe.get_value("Price List", self.buying_price_list, "buying"):
+		self.set_buying_price_list()
+
+	def set_buying_price_list(self):
+		if not is_valid_buying_price_list(self.buying_price_list):
 			self.buying_price_list = None
 
-		if not self.buying_price_list:
-			buying_price_list = frappe.defaults.get_defaults().buying_price_list
-			if frappe.has_permission("Price List", "read", buying_price_list):
-				self.buying_price_list = buying_price_list
+		if self.buying_price_list:
+			return
+
+		default_price_list = frappe.defaults.get_defaults().buying_price_list
+		if is_valid_buying_price_list(default_price_list) and frappe.has_permission(
+			"Price List", "read", default_price_list
+		):
+			self.buying_price_list = default_price_list
 
 	def on_update(self):
 		if not self.is_new() and self.buying_price_list and self.has_value_changed("buying_price_list"):
@@ -231,6 +240,14 @@ class MaterialRequest(BuyingController):
 
 	def before_update_after_submit(self):
 		self.validate_schedule_date()
+
+	def clear_source_warehouse(self):
+		"""Source Warehouse is only used by Material Transfer, so it stays hidden and stale otherwise."""
+		if self.material_request_type == "Material Transfer":
+			return
+
+		for item in self.items:
+			item.from_warehouse = None
 
 	def validate_material_request_type(self):
 		"""Validate fields in accordance with selected type"""
@@ -430,6 +447,10 @@ class MaterialRequest(BuyingController):
 			doc.flags.ignore_permissions = True
 			doc.set_status()
 			doc.db_set("status", doc.status)
+
+
+def is_valid_buying_price_list(price_list: str | None) -> bool:
+	return is_price_list_enabled(price_list) and bool(frappe.get_value("Price List", price_list, "buying"))
 
 
 def update_completed_and_requested_qty(stock_entry, method):
@@ -845,7 +866,7 @@ def make_stock_entry(source_name, target_doc=None):
 	return doclist
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def raise_work_orders(material_request: str):
 	mr = frappe.get_doc("Material Request", material_request)
 	mr.check_permission("read")

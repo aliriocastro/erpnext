@@ -133,6 +133,7 @@ class Opportunity(TransactionBase, CRMNote):
 		self.validate_uom_is_integer("uom", "qty")
 		self.validate_cust_name()
 		self.validate_party()
+		self.validate_party_specific_items()
 		self.map_fields()
 		self.validate_qty()
 		self.set_exchange_rate()
@@ -144,6 +145,32 @@ class Opportunity(TransactionBase, CRMNote):
 
 	def on_update(self):
 		self.update_prospect()
+
+	def validate_party_specific_items(self):
+		if self.opportunity_from != "Customer" or not self.party_name:
+			return
+
+		from erpnext.selling.doctype.party_specific_item.party_specific_item import get_party_specific_items
+
+		allowed_values = get_party_specific_items(self.party_name)
+		if not allowed_values:
+			return
+
+		rows = [row for row in self.get("items") if row.item_code]
+		allowed_items = frappe.get_all(
+			"Item",
+			filters=[["name", "in", list({row.item_code for row in rows})]]
+			+ [[field, "in", values] for field, values in allowed_values.items()],
+			pluck="name",
+		)
+		for row in rows:
+			if row.item_code not in allowed_items:
+				frappe.throw(
+					_("Row {0}: Item {1} is not allowed for {2} {3}.").format(
+						row.idx, frappe.bold(row.item_code), _("Customer"), frappe.bold(self.party_name)
+					),
+					title=_("Item Restricted for Party"),
+				)
 
 	def validate_qty(self):
 		for item in self.items:
@@ -517,8 +544,8 @@ def make_supplier_quotation(source_name, target_doc=None):
 	return doclist
 
 
-@frappe.whitelist()
-def set_multiple_status(names, status):
+@frappe.whitelist(methods=["POST"])
+def set_multiple_status(names: str | list[str], status: str):
 	names = json.loads(names)
 	for name in names:
 		opp = frappe.get_doc("Opportunity", name)
@@ -547,7 +574,7 @@ def auto_close_opportunity():
 		doc.save()
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def make_opportunity_from_communication(
 	communication: str, company: str, ignore_communication_links: bool = False
 ):

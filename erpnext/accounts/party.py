@@ -26,6 +26,7 @@ import erpnext
 from erpnext import get_company_currency
 from erpnext.accounts.utils import get_fiscal_year
 from erpnext.exceptions import InvalidAccountCurrency, PartyDisabled, PartyFrozen
+from erpnext.stock.doctype.price_list.price_list import is_price_list_enabled
 from erpnext.utilities.regional import temporary_flag
 
 try:
@@ -371,12 +372,17 @@ def set_other_values(party_details, party, party_type):
 
 
 def get_default_price_list(party):
-	"""Return default price list for party (Document object)"""
-	if party.get("default_price_list"):
-		return party.default_price_list
+	"""Return the first enabled default price list for party (Document object)"""
+	price_list = party.get("default_price_list")
+	if is_price_list_enabled(price_list):
+		return price_list
 
-	if party.doctype == "Customer":
-		return frappe.get_cached_value("Customer Group", party.customer_group, "default_price_list")
+	if party.doctype != "Customer":
+		return
+
+	price_list = frappe.get_cached_value("Customer Group", party.customer_group, "default_price_list")
+	if is_price_list_enabled(price_list):
+		return price_list
 
 
 def get_permitted_price_lists(doctype=None):
@@ -409,7 +415,7 @@ def set_price_list(party_details, party, party_type, given_price_list, pos=None,
 	elif pos and party_type == "Customer":
 		customer_price_list = frappe.get_value("Customer", party.name, "default_price_list")
 
-		if customer_price_list:
+		if is_price_list_enabled(customer_price_list):
 			price_list = customer_price_list
 		else:
 			pos_price_list = frappe.get_value("POS Profile", pos, "selling_price_list")
@@ -420,6 +426,9 @@ def set_price_list(party_details, party, party_type, given_price_list, pos=None,
 		# don't set a price list the user has no permission for, the transaction can't be saved with it
 		if price_list and permitted_price_lists and price_list not in permitted_price_lists:
 			price_list = get_usable_price_list(permitted_price_lists, party.doctype)
+
+	if price_list and not is_price_list_enabled(price_list):
+		price_list = None
 
 	if price_list:
 		party_details.price_list_currency = frappe.db.get_value(
@@ -902,6 +911,13 @@ def validate_party_frozen_disabled(party_type, party_name):
 def validate_account_party_type(self):
 	if self.is_cancelled:
 		return
+
+	if (
+		not self.flags.from_reversal
+		and self.party_type
+		and not frappe.db.exists("Party Type", self.party_type)
+	):
+		frappe.throw(_("{0} is not a valid Party Type").format(self.party_type))
 
 	if self.party_type and self.party:
 		account_type = frappe.get_cached_value("Account", self.account, "account_type")

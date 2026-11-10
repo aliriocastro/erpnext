@@ -5,6 +5,7 @@
 import frappe
 from frappe import ValidationError, _, msgprint
 from frappe.contacts.doctype.address.address import render_address
+from frappe.query_builder.functions import Sum
 from frappe.utils import cint, flt, getdate
 from frappe.utils.data import nowtime
 
@@ -19,6 +20,7 @@ from erpnext.controllers.subcontracting_controller import SubcontractingControll
 from erpnext.setup.utils import get_exchange_rate
 from erpnext.stock.get_item_details import get_conversion_factor
 from erpnext.stock.utils import _get_incoming_rate
+from erpnext.utilities.transaction_base import get_whole_number_uoms
 
 
 class QtyMismatchError(ValidationError):
@@ -392,7 +394,7 @@ class BuyingController(SubcontractingController):
 						"Buying Settings", "set_valuation_rate_for_rejected_materials"
 					)
 				):
-					net_rate = item.rejected_qty * item.net_rate
+					net_rate = item.rejected_qty * item.base_net_rate
 
 				qty_in_stock_uom = (
 					get_stock_qty(item, item.qty)
@@ -526,6 +528,7 @@ class BuyingController(SubcontractingController):
 		allow_to_edit_stock_qty = frappe.db.get_single_value(
 			"Stock Settings", "allow_to_edit_stock_uom_qty_for_purchase"
 		)
+		whole_number_uoms = get_whole_number_uoms(d.get("stock_uom") for d in self.get("items"))
 
 		for d in self.get("items"):
 			if d.meta.get_field("stock_qty"):
@@ -541,7 +544,7 @@ class BuyingController(SubcontractingController):
 						d.conversion_factor, d.precision("conversion_factor")
 					)
 
-				if allow_to_edit_stock_qty:
+				if allow_to_edit_stock_qty or d.get("stock_uom") in whole_number_uoms:
 					d.stock_qty = flt(d.stock_qty, d.precision("stock_qty"))
 					if d.get("received_stock_qty") and d.meta.get_field("received_stock_qty"):
 						d.received_stock_qty = flt(d.received_stock_qty, d.precision("received_stock_qty"))
@@ -1099,3 +1102,16 @@ def update_regional_item_valuation_rate(doc):
 def get_stock_qty(row, qty) -> float:
 	"""Qty of a row in the stock UOM, rounded as the stock ledger posts it."""
 	return flt(flt(qty) * flt(row.conversion_factor), row.precision("stock_qty"))
+
+
+def get_linked_asset_qty(detail_field, details, exclude_asset=None):
+	asset = frappe.qb.DocType("Asset")
+	query = (
+		frappe.qb.from_(asset)
+		.select(asset[detail_field], Sum(asset.asset_quantity))
+		.where((asset[detail_field].isin(details)) & (asset.docstatus < 2))
+		.groupby(asset[detail_field])
+	)
+	if exclude_asset:
+		query = query.where(asset.name != exclude_asset)
+	return dict(query.run())
